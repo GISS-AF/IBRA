@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#01696f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ore Squadra">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Ore Squadra</title>
+<style>
+:root{
+  --verde:#01696f; --verde-sc:#014d52; --verde-ch:#e6f2f2;
+  --sfondo:#f4f3ef; --carta:#ffffff; --testo:#1f2a2a; --grigio:#6b7676; --bordo:#d9d6cf;
+  --giallo:#fff4d6; --giallo-b:#d4a017; --rosso:#b03a48; --rosso-ch:#fbe9eb;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--sfondo);color:var(--testo);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-tap-highlight-color:transparent;padding-bottom:calc(68px + env(safe-area-inset-bottom))}
+header.top{position:sticky;top:0;z-index:5;background:var(--verde);color:#fff;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+header.top h1{font-size:17px;margin:0;font-weight:700}
+header.top .chi{font-size:12px;opacity:.85}
+main{max-width:640px;margin:0 auto;padding:12px 16px}
+nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:6;background:var(--carta);border-top:1px solid var(--bordo);
+  display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav.tabs button{flex:1;border:0;background:none;padding:8px 2px 9px;font-size:11px;color:var(--grigio);display:flex;flex-direction:column;align-items:center;gap:2px}
+nav.tabs button .ic{font-size:20px;line-height:1}
+nav.tabs button.on{color:var(--verde);font-weight:700}
+.card{background:var(--carta);border:1px solid var(--bordo);border-radius:10px;padding:12px;margin-bottom:10px}
+.riga{display:flex;align-items:center;gap:8px}
+.sp{flex:1}
+.muted{color:var(--grigio);font-size:13px}
+.big{font-size:26px;font-weight:800;color:var(--verde);font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums;font-weight:700}
+button.btn{border:1px solid var(--bordo);background:var(--carta);color:var(--testo);border-radius:8px;padding:10px 12px;font-size:14px;font-weight:600}
+button.btn.pri{background:var(--verde);border-color:var(--verde);color:#fff}
+button.btn.dan{color:var(--rosso);border-color:#e3b5bb}
+button.btn.full{width:100%}
+button.btn:active{transform:scale(.98)}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btns .btn{flex:1}
+.navdata{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.navdata .freccia{border:1px solid var(--bordo);background:var(--carta);border-radius:8px;width:44px;height:44px;font-size:20px}
+.navdata .centro{flex:1;text-align:center;position:relative}
+.navdata .centro .t{font-weight:700;font-size:16px}
+.navdata .centro input{position:absolute;inset:0;opacity:0;width:100%}
+.turno{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.turno .barra{width:5px;align-self:stretch;border-radius:3px;background:var(--verde)}
+.turno .op{font-weight:700}
+/* Giallo: turno arrivato dall'ufficio e ancora senza nome. Sbiadito: annullato */
+.turno.daass{background:var(--giallo);border-color:var(--giallo-b)}
+.turno.daass .op{color:#6b4e00}
+.turno.annull{opacity:.6}
+.turno.annull .op,.turno.annull .ore{text-decoration:line-through}
+.turno .ore{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--verde);white-space:nowrap}
+.avviso{background:var(--rosso-ch);color:var(--rosso);border-radius:6px;padding:4px 8px;font-size:12px;margin-top:6px}
+.banner{background:var(--giallo);border:1px solid var(--giallo-b);color:#6b4e00;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:13px;display:flex;gap:8px;align-items:center}
+.vuoto{text-align:center;color:var(--grigio);padding:24px 8px}
+.seg{display:flex;background:#e7e5df;border-radius:9px;padding:3px;margin-bottom:10px}
+.seg button{flex:1;border:0;background:none;padding:8px;border-radius:7px;font-weight:600;color:var(--grigio);font-size:14px}
+.seg button.on{background:var(--carta);color:var(--verde);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal .h{text-align:center;font-size:11px;color:var(--grigio);font-weight:700}
+.cal .g{background:var(--carta);border:1px solid var(--bordo);border-radius:7px;min-height:52px;padding:4px;font-size:12px;display:flex;flex-direction:column;cursor:pointer}
+.cal .g.vuota{visibility:hidden}
+.cal .g .n{font-weight:700}
+.cal .g .o{margin-top:auto;font-weight:800;color:var(--verde);font-size:12px;font-variant-numeric:tabular-nums}
+.cal .g.oggi{outline:2px solid var(--verde)}
+.cal .g.dom .n{color:var(--rosso)}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th{text-align:left;font-size:11px;color:var(--grigio);font-weight:700;border-bottom:1px solid var(--bordo);padding:6px 4px}
+table.t td{border-bottom:1px solid #eeece6;padding:6px 4px;vertical-align:top}
+table.t td.r,table.t th.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.t tr.tot td{font-weight:800;border-top:2px solid var(--verde);border-bottom:0}
+details>summary{list-style:none;cursor:pointer}
+details>summary::-webkit-details-marker{display:none}
+.chev{transition:transform .15s;color:var(--grigio)}
+details[open] .chev{transform:rotate(90deg)}
+.lista-el{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #eeece6;cursor:pointer}
+.lista-el:last-child{border-bottom:0}
+.pill{font-size:11px;border-radius:20px;padding:2px 8px;background:#e7e5df;color:var(--grigio)}
+/* foglio a comparsa */
+#velo{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;display:none}
+#foglio{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--carta);border-radius:16px 16px 0 0;max-height:92vh;overflow:auto;
+  padding:16px 16px calc(16px + env(safe-area-inset-bottom));display:none;max-width:640px;margin:0 auto}
+#foglio h2{margin:0 0 12px;font-size:18px}
+label.f{display:block;font-size:12px;font-weight:700;color:var(--grigio);margin:10px 0 4px}
+input.i,select.i,textarea.i{width:100%;font:inherit;font-size:16px;padding:10px;border:1px solid var(--bordo);border-radius:8px;background:#fff;color:var(--testo)}
+.due{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.totbox{background:var(--verde-ch);border:1px solid var(--verde);color:var(--verde);border-radius:8px;padding:10px 12px;margin-top:12px;display:flex;justify-content:space-between;align-items:baseline}
+.totbox b{font-size:20px;font-variant-numeric:tabular-nums}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{border:1px solid var(--bordo);background:#fff;border-radius:7px;padding:7px 9px;font-weight:700;font-size:12px;color:var(--grigio)}
+.chips button.on{background:var(--verde);color:#fff;border-color:var(--verde)}
+.check{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px}
+.check input{width:20px;height:20px}
+#toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1f2a2a;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;z-index:30;display:none;max-width:90vw}
+.solo-stampa{display:none}
+@media print{
+  header.top,nav.tabs,.no-stampa,.banner,#toast{display:none!important}
+  body{padding:0;background:#fff;font-size:11px}
+  main{max-width:none;padding:0}
+  .card{border:0;border-bottom:1px solid #999;border-radius:0;break-inside:avoid;padding:6px 0}
+  .solo-stampa{display:block}
+  details>summary .chev{display:none}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div><h1>Ore Squadra</h1><div class="chi" id="chi"></div></div>
+  <div class="chi" id="totTop"></div>
+</header>
+<main id="main"></main>
+<nav class="tabs" id="tabs">
+  <button data-act="vista" data-v="giorno"><span class="ic">📅</span>Giorno</button>
+  <button data-act="vista" data-v="mese"><span class="ic">🗓️</span>Mese</button>
+  <button data-act="vista" data-v="riepilogo"><span class="ic">📊</span>Riepilogo</button>
+  <button data-act="vista" data-v="liste"><span class="ic">👥</span>Liste</button>
+  <button data-act="vista" data-v="altro"><span class="ic">⚙️</span>Altro</button>
+</nav>
+<div id="velo"></div>
+<div id="foglio"></div>
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   Ore Squadra — app del capogruppo per segnare dove e quanto ha lavorato
+   ognuno dei suoi. Funziona solo sul telefono: i dati stanno nel browser
+   (localStorage), niente server, niente collegamenti al gestionale.
+   Per non perdere nulla c'e' il backup in un file.
+   ===================================================================== */
+const CHIAVE = "oreSquadra.v1";
+const GIORNI = ["Domenica","Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato"];
+const GG = ["Dom","Lun","Mar","Mer","Gio","Ven","Sab"];
+const MESI = ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
+const MM = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+const TINTE = ["#01696f","#2a5d9f","#c78219","#8a4f9e","#b03a48","#1d8a5e","#5a6b2f","#a0522d"];
+
+/* ---------- dati ---------- */
+function vuoto(){ return { versione:1, risorse:[], servizi:[], turni:[], imp:{ nome:"", ultimoBackup:null } }; }
+function carica(){
+  try{
+    const s = localStorage.getItem(CHIAVE);
+    if(!s) return vuoto();
+    const d = JSON.parse(s);
+    const v = vuoto();
+    return { ...v, ...d, imp:{ ...v.imp, ...(d.imp||{}) } };
+  }catch(e){ return vuoto(); }
+}
+let db = carica();
+function salva(){
+  try{ localStorage.setItem(CHIAVE, JSON.stringify(db)); }
+  catch(e){ alert("Attenzione: non riesco a salvare sul telefono ("+e.message+"). Fai subito un backup da Altro."); }
+}
+// Chiede al browser di non cancellare i dati quando il telefono e' pieno
+try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(e){}
+
+/* ---------- utilita' ---------- */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2,"0");
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const daIso = s => new Date(s+"T00:00:00");
+const oggi = () => iso(new Date());
+const spostaGiorno = (s,n) => { const d=daIso(s); d.setDate(d.getDate()+n); return iso(d); };
+const spostaMese = (m,n) => { const [a,b]=m.split("-").map(Number); const d=new Date(a,b-1+n,1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; };
+const nomeMese = m => { const [a,b]=m.split("-").map(Number); return `${MESI[b-1]} ${a}`; };
+const dataLunga = s => { const d=daIso(s); return `${GIORNI[d.getDay()]} ${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`; };
+const dataBreve = s => { const d=daIso(s); return `${GG[d.getDay()]} ${d.getDate()} ${MM[d.getMonth()]}`; };
+const aMin = t => { const [h,m]=(t||"0:0").split(":").map(Number); return (h||0)*60+(m||0); };
+// Durata in minuti; se l'orario passa la mezzanotte (22:00-06:00) arriva al mattino dopo
+const durata = (a,b) => { if(!a||!b) return 0; let m=aMin(b)-aMin(a); if(m<0) m+=1440; return m; };
+const minTurno = t => durata(t.dalle,t.alle) + ((t.dalle2&&t.alle2) ? durata(t.dalle2,t.alle2) : 0);
+const hm = m => `${Math.floor(m/60)}:${pad(Math.round(m%60))}`;
+const decimali = m => (Math.round(m/60*100)/100).toString().replace(".",",");
+const risorsa = id => db.risorse.find(r=>r.id===id);
+const servizio = id => db.servizi.find(s=>s.id===id);
+// Un turno senza operatore e' un turno arrivato dall'ufficio e non ancora
+// assegnato: non e' un errore, e' lavoro da smistare
+const nomeR = id => !id ? "Da assegnare" : (risorsa(id)?.nome || "(operatore eliminato)");
+const nomeS = id => servizio(id)?.nome || "(servizio eliminato)";
+const coloreS = id => { const i=db.servizi.findIndex(s=>s.id===id); return TINTE[(i<0?0:i)%TINTE.length]; };
+const orario = t => `${t.dalle}–${t.alle}` + (t.dalle2&&t.alle2 ? ` + ${t.dalle2}–${t.alle2}` : "");
+const turniDel = g => db.turni.filter(t=>t.data===g).sort((a,b)=>nomeR(a.risorsaId).localeCompare(nomeR(b.risorsaId))||a.dalle.localeCompare(b.dalle));
+const turniMese = m => db.turni.filter(t=>t.data.startsWith(m)).sort((a,b)=>a.data.localeCompare(b.data)||a.dalle.localeCompare(b.dalle));
+const attive = arr => arr.filter(x=>!x.nascosto).sort((a,b)=>a.nome.localeCompare(b.nome));
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.style.display="block"; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display="none",2600); }
+
+/* Segmenti di lavoro di un turno in minuti dall'inizio del suo giorno */
+function segmenti(t){
+  const s=[]; const add=(a,b)=>{ if(!a||!b) return; const x=aMin(a); s.push([x, x+durata(a,b)]); };
+  add(t.dalle,t.alle); add(t.dalle2,t.alle2); return s;
+}
+/* Avvisi: stessa persona in due posti alla stessa ora, o troppe ore nel giorno */
+function avvisi(t, escludiId){
+  const out=[];
+  // Senza operatore non si puo' dire che "e' in due posti insieme": sono
+  // turni da assegnare, e normalmente sono tanti sullo stesso giorno
+  if(!t.risorsaId) return out;
+  const stessi = db.turni.filter(x=>x.data===t.data && x.risorsaId===t.risorsaId && x.id!==escludiId);
+  const mie = segmenti(t);
+  for(const x of stessi){
+    if(segmenti(x).some(([a,b])=>mie.some(([c,d])=>a<d&&c<b))){ out.push(`Sovrapposto con ${nomeS(x.servizioId)} (${orario(x)})`); }
+  }
+  const tot = stessi.reduce((s,x)=>s+minTurno(x),0)+minTurno(t);
+  if(tot>12*60) out.push(`${nomeR(t.risorsaId)} supera le 12 ore nel giorno (${hm(tot)})`);
+  return out;
+}
+
+/* =====================================================================
+   TURNI DALL'UFFICIO
+   L'ufficio manda su WhatsApp un link: i dati stanno dopo il cancelletto,
+   quindi non passano da nessun server, restano nel telefono.
+   Ogni turno porta l'id del gestionale (gid): e' quello che permette di
+   rimandare lo stesso elenco dopo una correzione senza perdere il lavoro
+   gia' fatto qui.
+
+   Di ogni turno si tengono DUE orari:
+     prev   = quello previsto dall'ufficio
+     dalle/alle = quello svolto davvero, che il capogruppo puo' correggere
+   Se l'ufficio cambia il previsto e lui non aveva toccato niente, si
+   aggiornano tutti e due. Se invece lui aveva gia' corretto lo svolto,
+   quello resta: e' la sua parola sul campo.
+   ===================================================================== */
+
+/** Da base64url ai byte */
+function daBase64url(s){
+  const b64 = s.replace(/-/g,"+").replace(/_/g,"/") + "=".repeat((4 - s.length % 4) % 4);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Apre il pacchetto: "g" = compresso, "j" = testo semplice */
+async function apriPacco(pacco){
+  const tipo = pacco[0], corpo = daBase64url(pacco.slice(1));
+  if(tipo === "j") return JSON.parse(new TextDecoder().decode(corpo));
+  if(tipo !== "g") throw new Error("formato sconosciuto");
+  if(!window.DecompressionStream) throw new Error("questo telefono non sa aprire i dati compressi: chiedi all'ufficio il messaggio non compresso");
+  const flusso = new Blob([corpo]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(flusso).text());
+}
+
+/** Pesca il pacchetto da un link o da un messaggio incollato */
+function trovaPacco(testo){
+  const m = String(testo||"").match(/#imp=([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Un turno sta dentro quello che l'ufficio ha mandato?
+ * I pacchetti vecchi non hanno la data finale: allora vale "dal giorno X in
+ * poi", come prima.
+ */
+const nelPeriodo = (t, dati) =>
+  !!t.gid && t.data >= dati.dal && (!dati.al || t.data <= dati.al);
+
+const stessoOrario = (a,b) =>
+  (a?.dalle||"")===(b?.dalle||"") && (a?.alle||"")===(b?.alle||"") &&
+  (a?.dalle2||"")===(b?.dalle2||"") && (a?.alle2||"")===(b?.alle2||"");
+
+/**
+ * Guarda cosa cambierebbe, senza cambiare niente: serve a mostrare il
+ * riepilogo prima di importare.
+ */
+function confrontaImport(dati){
+  const perGid = {}; for(const t of db.turni) if(t.gid) perGid[t.gid] = t;
+  const arrivati = new Set((dati.turni||[]).map(t=>t.g));
+  let nuovi=0, modificati=0, invariati=0;
+  for(const n of dati.turni||[]){
+    const v = perGid[n.g];
+    if(!v){ nuovi++; continue; }
+    const prev = { dalle:n.a, alle:n.b, dalle2:n.a2||"", alle2:n.b2||"" };
+    if(stessoOrario(v.prev, prev) && v.data===n.d && !v.statoUff) invariati++; else modificati++;
+  }
+  // Spariti: c'erano, stanno nel periodo mandato, e stavolta non arrivano.
+  // Il periodo conta: se l'ufficio manda solo novembre, i turni di dicembre
+  // non sono "annullati", sono semplicemente fuori da quello che ha mandato.
+  const annullati = db.turni.filter(t => nelPeriodo(t, dati) && !arrivati.has(t.gid) && t.statoUff !== "annullato").length;
+  return { nuovi, modificati, invariati, annullati };
+}
+
+/** Applica davvero. Torna il riepilogo di quello che ha fatto. */
+function applicaImport(dati){
+  const esito = { nuovi:0, modificati:0, invariati:0, annullati:0, risorse:0, servizi:0 };
+
+  const uguale = (a,b) => String(a||"").trim().toLowerCase() === String(b||"").trim().toLowerCase();
+
+  // ── Le persone della squadra ──────────────────────────────────────────
+  // Si cerca prima per id del gestionale. Il nome e' solo un ripiego, per
+  // agganciare chi il capogruppo aveva gia' scritto a mano, e vale una volta
+  // sola: due persone con lo stesso nome non devono diventare una.
+  const perOp = {}, risUsate = new Set();
+  for(const o of dati.squadra||[]){
+    let r = db.risorse.find(x=>x.gid===o.id)
+         || db.risorse.find(x=>!x.gid && !risUsate.has(x.id) && uguale(x.nome,o.n));
+    if(!r){ r = { id:uid(), nome:o.n, tel:"", nascosto:false, gid:o.id }; db.risorse.push(r); esito.risorse++; }
+    if(!r.gid) r.gid = o.id;
+    risUsate.add(r.id);
+    perOp[o.id] = r.id;
+  }
+
+  // ── Le postazioni ─────────────────────────────────────────────────────
+  // Stessa regola, e qui conta davvero: della stessa catena arrivano piu'
+  // negozi con lo stesso nome e indirizzi diversi. Se si agganciassero per
+  // nome diventerebbero un negozio solo e le ore finirebbero tutte li'.
+  const perPost = {}, serUsati = new Set();
+  for(const p of dati.postazioni||[]){
+    let s = (p.k ? db.servizi.find(x=>x.gid===p.k) : null)
+         || db.servizi.find(x=>!x.gid && !serUsati.has(x.id) && uguale(x.nome,p.n) && (!x.indirizzo || !p.i || uguale(x.indirizzo,p.i)));
+    if(!s){
+      // Nome gia' in uso da un altro negozio: ci si mette l'indirizzo dietro,
+      // altrimenti nell'elenco si vedono due voci identiche
+      let nome = p.n;
+      if(db.servizi.some(x=>uguale(x.nome,nome)) && p.i) nome = `${p.n} · ${p.i}`;
+      s = { id:uid(), nome, indirizzo:p.i||"", dalle:"", alle:"", dalle2:"", alle2:"", orePreviste:"", nascosto:false, gid:p.k||null };
+      db.servizi.push(s); esito.servizi++;
+    }
+    if(!s.gid && p.k) s.gid = p.k;
+    if(!s.indirizzo && p.i) s.indirizzo = p.i;
+    serUsati.add(s.id);
+    perPost[p.p] = s.id;
+  }
+
+  // ── I turni ───────────────────────────────────────────────────────────
+  const perGid = {}; for(const t of db.turni) if(t.gid) perGid[t.gid] = t;
+  const arrivati = new Set();
+
+  for(const n of dati.turni||[]){
+    arrivati.add(n.g);
+    const prev = { dalle:n.a, alle:n.b, dalle2:n.a2||"", alle2:n.b2||"" };
+    const v = perGid[n.g];
+
+    if(!v){
+      // Se l'ufficio ha gia' messo un nome che non e' il capogruppo, si parte
+      // da quello; altrimenti il turno resta da assegnare.
+      const suo = n.o && perOp[n.o];
+      db.turni.push({
+        id:uid(), gid:n.g, data:n.d, servizioId:perPost[n.p]||"",
+        risorsaId: (suo && n.o !== dati.capoId) ? suo : "",
+        dalle:prev.dalle, alle:prev.alle, dalle2:prev.dalle2, alle2:prev.alle2,
+        note:n.note||"", prev, statoUff:"",
+      });
+      esito.nuovi++;
+      continue;
+    }
+
+    const cambiato = !stessoOrario(v.prev, prev) || v.data !== n.d;
+    // Lo svolto lo si tocca solo se lui non l'aveva gia' corretto
+    const nonToccato = !v.prev || stessoOrario(v, v.prev);
+    v.data = n.d;
+    v.servizioId = perPost[n.p] || v.servizioId;
+    if(n.note) v.note = n.note;
+    if(nonToccato){ v.dalle=prev.dalle; v.alle=prev.alle; v.dalle2=prev.dalle2; v.alle2=prev.alle2; }
+    v.prev = prev;
+    v.statoUff = cambiato ? "modificato" : "";
+    if(cambiato) esito.modificati++; else esito.invariati++;
+  }
+
+  // ── Quelli spariti: non si cancellano da soli, li conferma lui ────────
+  // Solo dentro il periodo mandato: quello che sta fuori non e' stato
+  // annullato, semplicemente l'ufficio stavolta non lo ha mandato.
+  for(const t of db.turni){
+    if(nelPeriodo(t, dati) && !arrivati.has(t.gid) && t.statoUff !== "annullato"){
+      t.statoUff = "annullato"; esito.annullati++;
+    }
+  }
+
+  if(!db.imp.nome && dati.capo) db.imp.nome = dati.capo;
+  db.imp.ultimoImport = { quando:new Date().toISOString(), dal:dati.dal, turni:(dati.turni||[]).length };
+  salva();
+  return esito;
+}
+
+/** Il riepilogo prima di importare: niente si muove finche' non conferma */
+let paccoInAttesa = null;
+function foglioImport(dati){
+  const c = confrontaImport(dati);
+  const gg = (dati.dal||"").split("-").reverse().join("/");
+  const voce = (n, testo, colore) => n ? `<div class="riga" style="padding:3px 0"><b style="width:46px;text-align:right;color:${colore}">${n}</b><span class="sp" style="padding-left:10px">${testo}</span></div>` : "";
+  apriFoglio(`<h2>Turni dall'ufficio</h2>
+    <p class="muted" style="margin-top:0">${esc(dati.capo||"")} · dal <b>${gg}</b> in poi · ${(dati.turni||[]).length} turni su ${(dati.postazioni||[]).length} postazioni.</p>
+    <div class="card" style="margin:0">
+      ${voce(c.nuovi, "turni nuovi, da assegnare", "#1d8a5e")}
+      ${voce(c.modificati, "cambiati dall'ufficio", "#c78219")}
+      ${voce(c.annullati, "annullati: te li segno e li togli tu", "#b03a48")}
+      ${voce(c.invariati, "già a posto, non li tocco", "#6f6b61")}
+      ${!c.nuovi && !c.modificati && !c.annullati ? `<div class="muted">Non cambia niente: hai già tutto.</div>` : ""}
+    </div>
+    <p class="muted">Le assegnazioni che hai già fatto non si perdono, e gli orari che hai corretto tu restano come li hai messi.</p>
+    <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiImport">Importa</button></div>`);
+}
+
+/* Assegna in blocco: la stessa persona su tanti turni da assegnare */
+function foglioAssegna(){
+  const daFare = db.turni.filter(t=>!t.risorsaId && t.statoUff!=="annullato");
+  const servIds = [...new Set(daFare.map(t=>t.servizioId))];
+  apriFoglio(`<h2>Assegna in blocco</h2>
+    <p class="muted" style="margin-top:0">Hai <b>${daFare.length}</b> turni da assegnare. Scegli chi, e su quali.</p>
+    <label class="f">Chi</label><select class="i" id="aRis"><option value="">— scegli —</option>${attive(db.risorse).map(r=>`<option value="${r.id}">${esc(r.nome)}</option>`).join("")}</select>
+    <label class="f">Postazione</label><select class="i" id="aSer"><option value="">Tutte</option>${servIds.map(s=>`<option value="${s}">${esc(nomeS(s))} (${daFare.filter(t=>t.servizioId===s).length})</option>`).join("")}</select>
+    <label class="f">Solo questi giorni della settimana</label>
+    <div class="chips" id="aGiorni">${[1,2,3,4,5,6,0].map(d=>`<button class="on" data-act="chipA" data-d="${d}">${GG[d]}</button>`).join("")}</div>
+    <div class="due"><div><label class="f">Dal</label><input class="i" type="date" id="aDal" value="${daFare.length?daFare.map(t=>t.data).sort()[0]:oggi()}"></div>
+      <div><label class="f">Al</label><input class="i" type="date" id="aAl" value="${daFare.length?daFare.map(t=>t.data).sort().slice(-1)[0]:oggi()}"></div></div>
+    <div class="totbox"><span>Turni che verranno assegnati</span><b id="aConta">0</b></div>
+    <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiAssegna">Assegna</button></div>`);
+  contaAssegna();
+}
+function turniDaAssegnare(){
+  const ser = val("aSer"), dal = val("aDal"), al = val("aAl");
+  const gg = [...document.querySelectorAll("#aGiorni button.on")].map(b=>Number(b.dataset.d));
+  return db.turni.filter(t => !t.risorsaId && t.statoUff!=="annullato"
+    && (!ser || t.servizioId===ser)
+    && (!dal || t.data>=dal) && (!al || t.data<=al)
+    && gg.includes(daIso(t.data).getDay()));
+}
+function contaAssegna(){ const e=document.getElementById("aConta"); if(e) e.textContent = turniDaAssegnare().length; }
+
+/* ---------- stato della schermata ---------- */
+const stato = { vista:"giorno", giorno:oggi(), mese:oggi().slice(0,7), riep:"op", liste:"risorse" };
+
+function render(){
+  document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on", b.dataset.v===stato.vista));
+  document.getElementById("chi").textContent = db.imp.nome ? `Capogruppo: ${db.imp.nome}` : "Tocca Altro per mettere il tuo nome";
+  const m = document.getElementById("main");
+  m.innerHTML = bannerBackup() + VISTE[stato.vista]();
+  window.scrollTo(0,0);
+}
+
+function bannerBackup(){
+  if(!db.turni.length) return "";
+  const u = db.imp.ultimoBackup;
+  const giorni = u ? Math.floor((Date.now()-new Date(u).getTime())/86400000) : null;
+  if(giorni!==null && giorni<7) return "";
+  return `<div class="banner no-stampa"><span>💾</span><span class="sp">${u?`Ultimo backup ${giorni} giorni fa.`:"Non hai ancora fatto un backup."} Se perdi il telefono perdi le ore.</span><button class="btn" data-act="backup">Salva</button></div>`;
+}
+
+/* ---------- vista GIORNO ---------- */
+function vistaGiorno(){
+  if(!db.risorse.length || !db.servizi.length){
+    return `<div class="card vuoto"><div style="font-size:34px">👋</div>
+      <p><b>Benvenuto!</b><br>Per iniziare aggiungi le tue <b>risorse</b> (chi lavora con te) e i <b>servizi</b> (dove si lavora).</p>
+      <button class="btn pri" data-act="vista" data-v="liste">Vai alle liste</button></div>`;
+  }
+  const g = stato.giorno, lista = turniDel(g);
+  const tot = lista.reduce((s,t)=>s+minTurno(t),0);
+  let h = `<div class="navdata">
+    <button class="freccia" data-act="giorno" data-n="-1">‹</button>
+    <div class="centro"><div class="t">${esc(dataLunga(g))}</div><div class="muted">${g===oggi()?"oggi":"tocca per scegliere il giorno"}</div>
+      <input type="date" value="${g}" data-act-change="sceglidata"></div>
+    <button class="freccia" data-act="giorno" data-n="1">›</button></div>
+    <div class="card riga"><div><div class="muted">Totale ore del giorno</div><div class="big">${hm(tot)}</div></div><div class="sp"></div>
+      <div class="muted" style="text-align:right">${lista.length} turn${lista.length===1?"o":"i"}<br>${(()=>{
+        // I turni senza nome non sono "una persona": si contano a parte
+        const p = new Set(lista.filter(t=>t.risorsaId).map(t=>t.risorsaId)).size;
+        const d = lista.filter(t=>!t.risorsaId).length;
+        return [p?`${p} person${p===1?"a":"e"}`:"", d?`${d} da assegnare`:""].filter(Boolean).join("<br>") || "—";
+      })()}</div></div>`;
+  if(!lista.length) h += `<div class="card vuoto">Nessun turno in questo giorno.</div>`;
+  for(const t of lista){
+    const av = avvisi(t,t.id);
+    const daAssegnare = !t.risorsaId;
+    const annullato = t.statoUff === "annullato";
+    h += `<div class="card turno ${daAssegnare?"daass":""} ${annullato?"annull":""}" data-act="modifica" data-id="${t.id}">
+      <div class="barra" style="background:${coloreS(t.servizioId)}"></div>
+      <div class="sp"><div class="op">${esc(nomeR(t.risorsaId))}</div>
+        <div>${esc(nomeS(t.servizioId))}</div>
+        <div class="muted">${esc(orario(t))}${t.note?` · ${esc(t.note)}`:""}</div>
+        ${annullato ? `<div class="avviso">✕ Annullato dall'ufficio — aprilo e togli il turno</div>` : ""}
+        ${t.statoUff==="modificato" ? `<div class="avviso">✎ Cambiato dall'ufficio: previsto ${esc(orario(t.prev||{}))}</div>` : ""}
+        ${av.map(a=>`<div class="avviso">⚠ ${esc(a)}</div>`).join("")}</div>
+      <div class="ore">${hm(minTurno(t))}</div></div>`;
+  }
+  const daAss = db.turni.filter(x=>!x.risorsaId && x.statoUff!=="annullato").length;
+  h += `<button class="btn pri full" data-act="nuovo" style="margin:4px 0 8px">+ Aggiungi turno</button>`;
+  if(daAss) h += `<button class="btn full" data-act="assegna" style="margin-bottom:8px">👤 Assegna in blocco (${daAss} da assegnare)</button>`;
+  h += `<div class="btns"><button class="btn" data-act="copiaieri">Copia da ieri</button><button class="btn" data-act="ripeti" ${lista.length?"":"disabled"}>Ripeti su più giorni</button></div>`;
+  return h;
+}
+
+/* ---------- vista MESE ---------- */
+function vistaMese(){
+  const m = stato.mese, [a,b] = m.split("-").map(Number);
+  const primo = new Date(a,b-1,1), nGiorni = new Date(a,b,0).getDate();
+  const lista = turniMese(m);
+  const perGiorno = {}; for(const t of lista) perGiorno[t.data]=(perGiorno[t.data]||0)+minTurno(t);
+  const tot = lista.reduce((s,t)=>s+minTurno(t),0);
+  let h = navMese() + `<div class="card riga"><div><div class="muted">Totale ore del mese</div><div class="big">${hm(tot)}</div></div><div class="sp"></div>
+    <div class="muted" style="text-align:right">${lista.length} turni<br>${Object.keys(perGiorno).length} giorni lavorati</div></div>
+    <div class="cal">${["L","M","M","G","V","S","D"].map(x=>`<div class="h">${x}</div>`).join("")}`;
+  for(let i=0;i<(primo.getDay()+6)%7;i++) h+=`<div class="g vuota"></div>`;
+  for(let d=1; d<=nGiorni; d++){
+    const g = `${m}-${pad(d)}`, dt=daIso(g);
+    h += `<div class="g ${g===oggi()?"oggi":""} ${dt.getDay()===0?"dom":""}" data-act="apri" data-g="${g}"><span class="n">${d}</span>${perGiorno[g]?`<span class="o">${hm(perGiorno[g])}</span>`:""}</div>`;
+  }
+  return h + `</div><p class="muted" style="text-align:center">Tocca un giorno per vedere o aggiungere i turni.</p>`;
+}
+function navMese(){
+  return `<div class="navdata no-stampa"><button class="freccia" data-act="mese" data-n="-1">‹</button>
+    <div class="centro"><div class="t" style="text-transform:capitalize">${nomeMese(stato.mese)}</div>
+    <input type="month" value="${stato.mese}" data-act-change="sceglimese"></div>
+    <button class="freccia" data-act="mese" data-n="1">›</button></div>`;
+}
+
+/* ---------- vista RIEPILOGO ---------- */
+function vistaRiepilogo(){
+  const m = stato.mese, lista = turniMese(m);
+  let h = navMese() + `<div class="seg no-stampa"><button class="${stato.riep==="op"?"on":""}" data-act="riep" data-v="op">Per operatore</button><button class="${stato.riep==="serv"?"on":""}" data-act="riep" data-v="serv">Per servizio</button></div>
+    <div class="solo-stampa"><h2 style="margin:0">Ore ${stato.riep==="op"?"per operatore":"per servizio"} — <span style="text-transform:capitalize">${nomeMese(m)}</span></h2><p>${esc(db.imp.nome?("Capogruppo: "+db.imp.nome):"")}</p></div>`;
+  if(!lista.length) return h + `<div class="card vuoto">Nessun turno in ${nomeMese(m)}.</div>`;
+  h += stato.riep==="op" ? riepOperatori(lista) : riepServizi(lista);
+  h += `<div class="btns no-stampa" style="margin-top:6px"><button class="btn" data-act="csv">📄 Excel del mese</button><button class="btn" data-act="stampa">🖨️ Stampa / PDF</button></div>`;
+  return h;
+}
+function riepOperatori(lista){
+  const per = {};
+  for(const t of lista){ (per[t.risorsaId] ||= []).push(t); }
+  const ids = Object.keys(per).sort((a,b)=>nomeR(a).localeCompare(nomeR(b)));
+  let h = "";
+  for(const id of ids){
+    const ts = per[id], tot = ts.reduce((s,t)=>s+minTurno(t),0);
+    const giorni = {}; for(const t of ts) (giorni[t.data] ||= []).push(t);
+    let righe = "";
+    for(const g of Object.keys(giorni).sort()){
+      const gt = giorni[g], totG = gt.reduce((s,t)=>s+minTurno(t),0);
+      gt.forEach((t,i)=>{
+        righe += `<tr>${i===0?`<td rowspan="${gt.length}">${esc(dataBreve(g))}</td>`:""}
+          <td>${esc(nomeS(t.servizioId))}${servizio(t.servizioId)?.indirizzo?`<div class="muted">${esc(servizio(t.servizioId).indirizzo)}</div>`:""}</td>
+          <td class="r">${esc(orario(t)).replace(" + ","<br>")}</td>
+          ${i===0?`<td class="r num" rowspan="${gt.length}">${hm(totG)}</td>`:""}</tr>`;
+      });
+    }
+    h += `<details class="card"><summary class="riga"><span class="chev">▶</span><div class="sp"><div class="op" style="font-weight:700">${esc(nomeR(id))}</div>
+        <div class="muted">${Object.keys(giorni).length} giorni · ${ts.length} turni</div></div><div class="big" style="font-size:22px">${hm(tot)}</div></summary>
+      <table class="t" style="margin-top:8px"><tr><th>Giorno</th><th>Dove</th><th class="r">Orario</th><th class="r">Tot giorno</th></tr>${righe}
+      <tr class="tot"><td colspan="3">Totale mese</td><td class="r">${hm(tot)}</td></tr></table></details>`;
+  }
+  const totale = lista.reduce((s,t)=>s+minTurno(t),0);
+  return h + `<div class="card riga"><b class="sp">Totale squadra</b><span class="big" style="font-size:22px">${hm(totale)}</span></div>`;
+}
+function riepServizi(lista){
+  const per = {};
+  for(const t of lista){ (per[t.servizioId] ||= []).push(t); }
+  const ids = Object.keys(per).sort((a,b)=>nomeS(a).localeCompare(nomeS(b)));
+  let h = "";
+  for(const id of ids){
+    const ts = per[id], tot = ts.reduce((s,t)=>s+minTurno(t),0), s = servizio(id);
+    const perOp = {}; for(const t of ts) perOp[t.risorsaId]=(perOp[t.risorsaId]||0)+minTurno(t);
+    let prev = "";
+    if(s && s.orePreviste){
+      const diff = tot - s.orePreviste*60;
+      const col = Math.abs(diff)<1 ? "#1d8a5e" : (diff<0 ? "#c78219" : "#b03a48");
+      prev = `<div style="color:${col};font-size:13px;font-weight:700">Previste ${hm(s.orePreviste*60)} · ${Math.abs(diff)<1?"✓ in linea":(diff<0?`mancano ${hm(-diff)}`:`in più ${hm(diff)}`)}</div>`;
+    }
+    h += `<details class="card"><summary class="riga"><span class="chev">▶</span><span style="width:10px;height:10px;border-radius:50%;background:${coloreS(id)}"></span>
+        <div class="sp"><div style="font-weight:700">${esc(nomeS(id))}</div>${s?.indirizzo?`<div class="muted">${esc(s.indirizzo)}</div>`:""}${prev}</div>
+        <div class="big" style="font-size:22px">${hm(tot)}</div></summary>
+      <table class="t" style="margin-top:8px"><tr><th>Operatore</th><th class="r">Ore</th></tr>
+      ${Object.keys(perOp).sort((a,b)=>nomeR(a).localeCompare(nomeR(b))).map(o=>`<tr><td>${esc(nomeR(o))}</td><td class="r num">${hm(perOp[o])}</td></tr>`).join("")}
+      <tr class="tot"><td>Totale</td><td class="r">${hm(tot)}</td></tr></table></details>`;
+  }
+  return h;
+}
+
+/* ---------- vista LISTE ---------- */
+function vistaListe(){
+  const r = stato.liste==="risorse";
+  const arr = (r?db.risorse:db.servizi).slice().sort((a,b)=>(!!a.nascosto-!!b.nascosto)||a.nome.localeCompare(b.nome));
+  let h = `<div class="seg"><button class="${r?"on":""}" data-act="liste" data-v="risorse">Risorse (${db.risorse.length})</button><button class="${!r?"on":""}" data-act="liste" data-v="servizi">Servizi (${db.servizi.length})</button></div>
+    <p class="muted" style="margin-top:0">${r?"Le persone che mandi a lavorare.":"I posti dove si lavora, con l'orario tipico: quando scegli il servizio l'orario si compila da solo."}</p>
+    <button class="btn pri full" data-act="${r?"nuovaR":"nuovoS"}" style="margin-bottom:10px">+ ${r?"Aggiungi risorsa":"Aggiungi servizio"}</button><div class="card">`;
+  if(!arr.length) h += `<div class="vuoto">Ancora nessun${r?"a risorsa":" servizio"}.</div>`;
+  for(const x of arr){
+    const n = db.turni.filter(t=>r?t.risorsaId===x.id:t.servizioId===x.id).length;
+    h += `<div class="lista-el" data-act="${r?"modR":"modS"}" data-id="${x.id}">${r?"":`<span style="width:10px;height:10px;border-radius:50%;background:${coloreS(x.id)}"></span>`}
+      <div class="sp"><div style="font-weight:700">${esc(x.nome)}</div><div class="muted">${r?esc(x.tel||""):esc([x.indirizzo, x.dalle&&x.alle?orario(x):""].filter(Boolean).join(" · "))}</div></div>
+      ${x.nascosto?`<span class="pill">nascost${r?"a":"o"}</span>`:""}<span class="muted">${n} turni</span></div>`;
+  }
+  return h + `</div>`;
+}
+
+/* ---------- vista ALTRO ---------- */
+function vistaAltro(){
+  const u = db.imp.ultimoBackup;
+  return `<div class="card"><label class="f" style="margin-top:0">Il tuo nome (compare su stampe ed Excel)</label>
+      <input class="i" id="nomeCapo" value="${esc(db.imp.nome)}" placeholder="Es. Ibrahim ..." data-act-change="nome"></div>
+    <div class="card"><b>💾 Backup</b><p class="muted" style="margin:4px 0 10px">I dati stanno solo su questo telefono. Salva un backup ogni settimana (mandalo a te stesso su WhatsApp o mail): se cambi o perdi il telefono lo ripristini da qui.<br>
+      Ultimo backup: <b>${u?new Date(u).toLocaleString("it-IT"):"mai"}</b></p>
+      <div class="btns"><button class="btn pri" data-act="backup">Salva backup</button><button class="btn" data-act="ripristina">Ripristina</button></div>
+      <input type="file" id="fileRipr" accept=".json,application/json" style="display:none"></div>
+    <div class="card"><b>📨 Turni dall'ufficio</b><p class="muted" style="margin:4px 0 10px">
+      Di solito basta <b>aprire il link</b> che ti manda l'ufficio su WhatsApp. Se il link non si apre, incolla qui il messaggio.
+      ${db.imp.ultimoImport ? `<br>Ultimo caricamento: <b>${new Date(db.imp.ultimoImport.quando).toLocaleString("it-IT")}</b> (${db.imp.ultimoImport.turni} turni dal ${db.imp.ultimoImport.dal.split("-").reverse().join("/")}).` : ""}</p>
+      <textarea class="i" id="incolla" rows="3" placeholder="Incolla qui tutto il messaggio" style="font-family:monospace;font-size:12px"></textarea>
+      <button class="btn full" data-act="leggiIncollato" style="margin-top:8px">Leggi il messaggio</button></div>
+    <div class="card"><b>📄 Esporta il mese</b><p class="muted" style="margin:4px 0 10px">File Excel (CSV) con una riga per turno: data, operatore, servizio, orari, ore. Il mese è quello scelto in Mese/Riepilogo: <b style="text-transform:capitalize">${nomeMese(stato.mese)}</b>.</p>
+      <button class="btn full" data-act="csv">Esporta ${nomeMese(stato.mese)}</button></div>
+    <div class="card"><b>Dati sul telefono</b><p class="muted" style="margin:4px 0 10px">${db.risorse.length} risorse · ${db.servizi.length} servizi · ${db.turni.length} turni</p>
+      <button class="btn dan full" data-act="cancellatutto">Cancella tutti i dati</button></div>
+    <p class="muted" style="text-align:center">Ore Squadra · funziona anche senza internet</p>`;
+}
+
+const VISTE = { giorno:vistaGiorno, mese:vistaMese, riepilogo:vistaRiepilogo, liste:vistaListe, altro:vistaAltro };
+
+/* ---------- foglio a comparsa ---------- */
+function apriFoglio(html){ const f=document.getElementById("foglio"); f.innerHTML=html; f.style.display="block"; document.getElementById("velo").style.display="block"; f.scrollTop=0; }
+function chiudiFoglio(){ document.getElementById("foglio").style.display="none"; document.getElementById("velo").style.display="none"; }
+document.getElementById("velo").onclick = chiudiFoglio;
+const val = id => (document.getElementById(id)?.value ?? "").trim();
+
+/* Turno: nuovo o modifica */
+function foglioTurno(t){
+  const nuovo = !t;
+  t = t || { data:stato.giorno, risorsaId:"", servizioId:"", dalle:"", alle:"", dalle2:"", alle2:"", note:"" };
+  const ris = attive(db.risorse), ser = attive(db.servizi);
+  // in modifica la persona o il servizio nascosti devono restare scelti
+  if(t.risorsaId && !ris.find(r=>r.id===t.risorsaId) && risorsa(t.risorsaId)) ris.push(risorsa(t.risorsaId));
+  if(t.servizioId && !ser.find(s=>s.id===t.servizioId) && servizio(t.servizioId)) ser.push(servizio(t.servizioId));
+  const doppio = !!(t.dalle2||t.alle2);
+  apriFoglio(`<h2>${nuovo?"Nuovo turno":"Modifica turno"}</h2>
+    <label class="f">Giorno</label><input class="i" type="date" id="tData" value="${t.data}">
+    <label class="f">Chi va a lavorare</label><select class="i" id="tRis"><option value="">— scegli —</option>${ris.map(r=>`<option value="${r.id}" ${r.id===t.risorsaId?"selected":""}>${esc(r.nome)}</option>`).join("")}</select>
+    <label class="f">Dove (servizio)</label><select class="i" id="tSer"><option value="">— scegli —</option>${ser.map(s=>`<option value="${s.id}" ${s.id===t.servizioId?"selected":""}>${esc(s.nome)}</option>`).join("")}</select>
+    <div class="due"><div><label class="f">Dalle</label><input class="i" type="time" id="tDa" value="${t.dalle}"></div><div><label class="f">Alle</label><input class="i" type="time" id="tA" value="${t.alle}"></div></div>
+    <label class="check"><input type="checkbox" id="tDoppio" ${doppio?"checked":""}> Secondo turno nello stesso giorno</label>
+    <div class="due" id="boxDoppio" style="display:${doppio?"grid":"none"}"><div><label class="f">Dalle 2</label><input class="i" type="time" id="tDa2" value="${t.dalle2||""}"></div><div><label class="f">Alle 2</label><input class="i" type="time" id="tA2" value="${t.alle2||""}"></div></div>
+    <label class="f">Note (facoltative)</label><input class="i" id="tNote" value="${esc(t.note||"")}" placeholder="Es. sostituisce Op2">
+    ${t.gid ? `<div class="banner" style="margin:10px 0 0"><span>📨</span><span class="sp">
+      ${t.statoUff==="annullato" ? "<b>Annullato dall'ufficio.</b> Se non si è lavorato, elimina il turno."
+        : t.statoUff==="modificato" ? `<b>Cambiato dall'ufficio.</b> Previsto: ${esc(orario(t.prev||{}))}`
+        : `Turno dell'ufficio · previsto ${esc(orario(t.prev||{}))}`}
+      ${t.prev && !stessoOrario(t, t.prev) ? "<br>Gli orari qui sotto sono quelli che hai corretto tu: restano." : ""}
+    </span></div>` : ""}
+    <div class="totbox"><span>Totale ore giornata</span><b id="tTot">0:00</b></div>
+    <div id="tAvvisi"></div>
+    <div class="btns" style="margin-top:14px">${nuovo?"":`<button class="btn dan" data-act="eliminaT" data-id="${t.id}">Elimina</button>`}<button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaT" data-id="${nuovo?"":t.id}">Salva</button></div>`);
+  aggiornaTotTurno(t.id);
+}
+function leggiTurno(){
+  const doppio = document.getElementById("tDoppio").checked;
+  return { data:val("tData"), risorsaId:val("tRis"), servizioId:val("tSer"), dalle:val("tDa"), alle:val("tA"),
+    dalle2: doppio?val("tDa2"):"", alle2: doppio?val("tA2"):"", note:val("tNote") };
+}
+function aggiornaTotTurno(id){
+  const t = leggiTurno();
+  document.getElementById("tTot").textContent = hm(minTurno(t));
+  const av = (t.risorsaId && t.data && t.dalle && t.alle) ? avvisi(t, id) : [];
+  document.getElementById("tAvvisi").innerHTML = av.map(a=>`<div class="avviso">⚠ ${esc(a)}</div>`).join("");
+}
+
+/* Ripeti il giorno su un periodo */
+function foglioRipeti(){
+  const g = stato.giorno, fine = spostaGiorno(g,6);
+  apriFoglio(`<h2>Ripeti su più giorni</h2>
+    <p class="muted" style="margin-top:0">Copia i ${turniDel(g).length} turni di <b>${esc(dataBreve(g))}</b> sui giorni scelti.</p>
+    <div class="due"><div><label class="f">Dal</label><input class="i" type="date" id="rDal" value="${spostaGiorno(g,1)}"></div><div><label class="f">Al</label><input class="i" type="date" id="rAl" value="${fine}"></div></div>
+    <label class="f">Solo questi giorni della settimana</label>
+    <div class="chips" id="rGiorni">${[1,2,3,4,5,6,0].map(d=>`<button class="on" data-act="chip" data-d="${d}">${GG[d]}</button>`).join("")}</div>
+    <label class="check"><input type="checkbox" id="rSalta" checked> Salta i giorni che hanno già dei turni</label>
+    <div class="totbox"><span>Giorni che verranno compilati</span><b id="rConta">0</b></div>
+    <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiRipeti">Copia</button></div>`);
+  contaRipeti();
+}
+function giorniRipeti(){
+  const dal=val("rDal"), al=val("rAl"); if(!dal||!al||al<dal) return [];
+  const ok = [...document.querySelectorAll("#rGiorni button.on")].map(b=>Number(b.dataset.d));
+  const salta = document.getElementById("rSalta").checked, out=[];
+  for(let g=dal; g<=al && out.length<370; g=spostaGiorno(g,1)){
+    if(g===stato.giorno) continue;
+    if(!ok.includes(daIso(g).getDay())) continue;
+    if(salta && db.turni.some(t=>t.data===g)) continue;
+    out.push(g);
+  }
+  return out;
+}
+function contaRipeti(){ document.getElementById("rConta").textContent = giorniRipeti().length; }
+
+/* Risorsa e servizio */
+function foglioRisorsa(r){
+  const nuovo=!r; r = r || { nome:"", tel:"", nascosto:false };
+  apriFoglio(`<h2>${nuovo?"Nuova risorsa":"Modifica risorsa"}</h2>
+    <label class="f">Nome e cognome</label><input class="i" id="rNome" value="${esc(r.nome)}" placeholder="Es. Mario Rossi">
+    <label class="f">Telefono (facoltativo)</label><input class="i" id="rTel" type="tel" value="${esc(r.tel||"")}">
+    ${nuovo?"":`<label class="check"><input type="checkbox" id="rNasc" ${r.nascosto?"checked":""}> Nascondi (non lavora più con me: resta nei mesi passati)</label>`}
+    <div class="btns" style="margin-top:14px">${nuovo?"":`<button class="btn dan" data-act="eliminaR" data-id="${r.id}">Elimina</button>`}<button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaR" data-id="${nuovo?"":r.id}">Salva</button></div>`);
+  setTimeout(()=>document.getElementById("rNome").focus(),50);
+}
+function foglioServizio(s){
+  const nuovo=!s; s = s || { nome:"", indirizzo:"", dalle:"", alle:"", dalle2:"", alle2:"", orePreviste:"", nascosto:false };
+  apriFoglio(`<h2>${nuovo?"Nuovo servizio":"Modifica servizio"}</h2>
+    <label class="f">Nome / luogo</label><input class="i" id="sNome" value="${esc(s.nome)}" placeholder="Es. Douglas Milano Indipendenza">
+    <label class="f">Indirizzo (facoltativo)</label><input class="i" id="sInd" value="${esc(s.indirizzo||"")}">
+    <label class="f">Orario tipico (si compila da solo nei turni)</label>
+    <div class="due"><input class="i" type="time" id="sDa" value="${s.dalle||""}"><input class="i" type="time" id="sA" value="${s.alle||""}"></div>
+    <label class="f">Secondo turno tipico (facoltativo)</label>
+    <div class="due"><input class="i" type="time" id="sDa2" value="${s.dalle2||""}"><input class="i" type="time" id="sA2" value="${s.alle2||""}"></div>
+    <label class="f">Ore previste nel mese (facoltativo, per il confronto)</label><input class="i" id="sPrev" type="number" inputmode="decimal" step="0.5" min="0" value="${s.orePreviste||""}">
+    ${nuovo?"":`<label class="check"><input type="checkbox" id="sNasc" ${s.nascosto?"checked":""}> Nascondi (servizio finito: resta nei mesi passati)</label>`}
+    <div class="btns" style="margin-top:14px">${nuovo?"":`<button class="btn dan" data-act="eliminaS" data-id="${s.id}">Elimina</button>`}<button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaS" data-id="${nuovo?"":s.id}">Salva</button></div>`);
+  setTimeout(()=>document.getElementById("sNome").focus(),50);
+}
+
+/* ---------- file: backup, ripristino, Excel ---------- */
+async function consegnaFile(nome, contenuto, tipo){
+  const blob = new Blob([contenuto], { type:tipo });
+  // Sul telefono, se si puo', si apre "Condividi" (WhatsApp, mail, Drive...)
+  try{
+    const file = new File([blob], nome, { type:tipo });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){ await navigator.share({ files:[file], title:nome }); return true; }
+  }catch(e){ if(e && e.name==="AbortError") return false; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  return true;
+}
+async function backup(){
+  const ok = await consegnaFile(`ore-squadra-backup-${oggi()}.json`, JSON.stringify(db,null,1), "application/json");
+  if(ok){ db.imp.ultimoBackup = new Date().toISOString(); salva(); render(); toast("Backup salvato"); }
+}
+function ripristina(file){
+  const fr = new FileReader();
+  fr.onload = () => {
+    try{
+      const d = JSON.parse(fr.result);
+      if(!Array.isArray(d.turni) || !Array.isArray(d.risorse) || !Array.isArray(d.servizi)) throw new Error("non è un backup di Ore Squadra");
+      if(!confirm(`Il backup contiene ${d.risorse.length} risorse, ${d.servizi.length} servizi e ${d.turni.length} turni.\nSostituisce TUTTI i dati attuali. Continuo?`)) return;
+      const v = vuoto(); db = { ...v, ...d, imp:{ ...v.imp, ...(d.imp||{}) } }; salva(); render(); toast("Backup ripristinato");
+    }catch(e){ alert("File non valido: "+e.message); }
+  };
+  fr.readAsText(file);
+}
+function csvMese(){
+  const m = stato.mese, lista = turniMese(m);
+  if(!lista.length){ toast(`Nessun turno in ${nomeMese(m)}`); return; }
+  const c = v => { const s=String(v??""); return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  // Totale del giorno per persona, ripetuto su ogni riga di quel giorno
+  const totGiorno = {}; for(const t of lista){ const k=t.risorsaId+"|"+t.data; totGiorno[k]=(totGiorno[k]||0)+minTurno(t); }
+  const righe = [["Capogruppo","Data","Giorno","Operatore","Servizio","Indirizzo","Dalle","Alle","Dalle 2","Alle 2","Ore turno","Ore turno (decimali)","Tot giorno operatore","Note"]];
+  for(const t of lista){
+    righe.push([db.imp.nome, t.data.split("-").reverse().join("/"), GIORNI[daIso(t.data).getDay()], nomeR(t.risorsaId), nomeS(t.servizioId), servizio(t.servizioId)?.indirizzo||"",
+      t.dalle, t.alle, t.dalle2||"", t.alle2||"", hm(minTurno(t)), decimali(minTurno(t)), hm(totGiorno[t.risorsaId+"|"+t.data]), t.note||""]);
+  }
+  // Totali del mese per operatore in fondo
+  righe.push([]); righe.push(["","","","TOTALI DEL MESE","","","","","","","Ore","Ore (decimali)"]);
+  const per={}; for(const t of lista) per[t.risorsaId]=(per[t.risorsaId]||0)+minTurno(t);
+  Object.keys(per).sort((a,b)=>nomeR(a).localeCompare(nomeR(b))).forEach(id=>righe.push(["","","",nomeR(id),"","","","","","",hm(per[id]),decimali(per[id])]));
+  const testo = "﻿" + righe.map(r=>r.map(c).join(";")).join("\r\n");
+  consegnaFile(`ore-squadra-${m}${db.imp.nome?"-"+db.imp.nome.replace(/[^\w]+/g,"_"):""}.csv`, testo, "text/csv");
+}
+
+/* ---------- azioni ---------- */
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-act]"); if(!el) return;
+  const a = el.dataset.act, id = el.dataset.id;
+  switch(a){
+    case "vista": stato.vista = el.dataset.v; if(stato.vista==="giorno"&&!stato.giorno) stato.giorno=oggi(); render(); break;
+    case "giorno": stato.giorno = spostaGiorno(stato.giorno, Number(el.dataset.n)); render(); break;
+    case "mese": stato.mese = spostaMese(stato.mese, Number(el.dataset.n)); render(); break;
+    case "apri": stato.giorno = el.dataset.g; stato.vista="giorno"; render(); break;
+    case "riep": stato.riep = el.dataset.v; render(); break;
+    case "liste": stato.liste = el.dataset.v; render(); break;
+    case "chiudi": chiudiFoglio(); break;
+    case "nuovo": foglioTurno(null); break;
+    case "modifica": foglioTurno(db.turni.find(t=>t.id===id)); break;
+    case "salvaT": {
+      const t = leggiTurno();
+      if(!t.data||!t.risorsaId||!t.servizioId||!t.dalle||!t.alle){ toast("Compila giorno, persona, servizio, dalle e alle"); return; }
+      if(t.dalle===t.alle){ toast("Dalle e Alle sono uguali"); return; }
+      if((t.dalle2&&!t.alle2)||(!t.dalle2&&t.alle2)){ toast("Secondo turno: servono sia Dalle 2 che Alle 2"); return; }
+      if(id){
+        const v = db.turni.find(x=>x.id===id);
+        Object.assign(v, t);
+        // Se l'ufficio aveva segnalato una modifica, aprendolo e salvando
+        // l'ha vista: il segno si toglie. L'annullato invece resta finche'
+        // non elimina il turno.
+        if(v.statoUff === "modificato") v.statoUff = "";
+      } else { db.turni.push({ id:uid(), ...t }); }
+      salva(); chiudiFoglio(); stato.giorno = t.data; stato.mese = t.data.slice(0,7); render(); toast("Turno salvato"); break; }
+    case "eliminaT": if(confirm("Elimino questo turno?")){ db.turni = db.turni.filter(t=>t.id!==id); salva(); chiudiFoglio(); render(); } break;
+    case "copiaieri": {
+      const ieri = turniDel(spostaGiorno(stato.giorno,-1));
+      if(!ieri.length){ toast("Il giorno prima non ha turni"); return; }
+      if(turniDel(stato.giorno).length && !confirm("Questo giorno ha già dei turni: aggiungo anche quelli di ieri?")) return;
+      ieri.forEach(t=>db.turni.push({ ...t, id:uid(), data:stato.giorno })); salva(); render(); toast(`Copiati ${ieri.length} turni`); break; }
+    case "ripeti": foglioRipeti(); break;
+    case "chip": el.classList.toggle("on"); contaRipeti(); break;
+    case "chipA": el.classList.toggle("on"); contaAssegna(); break;
+    case "assegna": foglioAssegna(); break;
+    case "faiAssegna": {
+      const chi = val("aRis");
+      if(!chi){ toast("Scegli chi ci va"); return; }
+      const ts = turniDaAssegnare();
+      if(!ts.length){ toast("Nessun turno da assegnare con questi filtri"); return; }
+      if(!confirm(`Assegno ${ts.length} turni a ${nomeR(chi)}?`)) return;
+      ts.forEach(t=>{ t.risorsaId = chi; });
+      salva(); chiudiFoglio(); render(); toast(`${ts.length} turni assegnati a ${nomeR(chi)}`); break; }
+    case "leggiIncollato": {
+      const pacco = trovaPacco(val("incolla"));
+      if(!pacco){ toast("Nel testo non trovo i turni: incolla tutto il messaggio"); return; }
+      caricaPacco(pacco); break; }
+    case "faiImport": {
+      if(!paccoInAttesa){ toast("Niente da importare"); return; }
+      const e = applicaImport(paccoInAttesa);
+      paccoInAttesa = null;
+      chiudiFoglio();
+      if(e.nuovi) { stato.vista = "giorno"; }
+      render();
+      toast(`${e.nuovi} nuovi · ${e.modificati} cambiati · ${e.annullati} annullati`);
+      break; }
+    case "faiRipeti": {
+      const giorni = giorniRipeti(), base = turniDel(stato.giorno);
+      if(!giorni.length){ toast("Nessun giorno da compilare"); return; }
+      giorni.forEach(g=>base.forEach(t=>db.turni.push({ ...t, id:uid(), data:g })));
+      salva(); chiudiFoglio(); render(); toast(`Copiati su ${giorni.length} giorni`); break; }
+    case "nuovaR": foglioRisorsa(null); break;
+    case "modR": foglioRisorsa(risorsa(id)); break;
+    case "salvaR": {
+      const nome = val("rNome"); if(!nome){ toast("Scrivi il nome"); return; }
+      const dati = { nome, tel:val("rTel"), nascosto: !!document.getElementById("rNasc")?.checked };
+      if(id) Object.assign(risorsa(id), dati); else db.risorse.push({ id:uid(), ...dati });
+      salva(); chiudiFoglio(); render(); break; }
+    case "eliminaR": {
+      const n = db.turni.filter(t=>t.risorsaId===id).length;
+      if(n){ alert(`Non si può eliminare: ha ${n} turni registrati.\nSpunta "Nascondi" se non lavora più con te.`); return; }
+      if(confirm("Elimino questa risorsa?")){ db.risorse = db.risorse.filter(r=>r.id!==id); salva(); chiudiFoglio(); render(); } break; }
+    case "nuovoS": foglioServizio(null); break;
+    case "modS": foglioServizio(servizio(id)); break;
+    case "salvaS": {
+      const nome = val("sNome"); if(!nome){ toast("Scrivi il nome del servizio"); return; }
+      const dati = { nome, indirizzo:val("sInd"), dalle:val("sDa"), alle:val("sA"), dalle2:val("sDa2"), alle2:val("sA2"),
+        orePreviste: parseFloat(val("sPrev").replace(",", "."))||"", nascosto: !!document.getElementById("sNasc")?.checked };
+      if(id) Object.assign(servizio(id), dati); else db.servizi.push({ id:uid(), ...dati });
+      salva(); chiudiFoglio(); render(); break; }
+    case "eliminaS": {
+      const n = db.turni.filter(t=>t.servizioId===id).length;
+      if(n){ alert(`Non si può eliminare: ha ${n} turni registrati.\nSpunta "Nascondi" se il servizio è finito.`); return; }
+      if(confirm("Elimino questo servizio?")){ db.servizi = db.servizi.filter(s=>s.id!==id); salva(); chiudiFoglio(); render(); } break; }
+    case "backup": backup(); break;
+    case "ripristina": document.getElementById("fileRipr").click(); break;
+    case "csv": csvMese(); break;
+    case "stampa": document.querySelectorAll("details").forEach(d=>d.open=true); setTimeout(()=>window.print(),100); break;
+    case "cancellatutto":
+      if(confirm("Cancello TUTTI i dati da questo telefono?") && confirm("Sicuro? Senza backup non si recuperano.")){ db = vuoto(); salva(); render(); }
+      break;
+  }
+});
+
+document.addEventListener("change", e => {
+  const el = e.target;
+  if(el.id==="fileRipr" && el.files[0]){ ripristina(el.files[0]); el.value=""; return; }
+  const a = el.dataset.actChange;
+  if(a==="sceglidata" && el.value){ stato.giorno = el.value; render(); }
+  if(a==="sceglimese" && el.value){ stato.mese = el.value; render(); }
+  if(a==="nome"){ db.imp.nome = el.value.trim(); salva(); document.getElementById("chi").textContent = db.imp.nome?`Capogruppo: ${db.imp.nome}`:""; toast("Nome salvato"); }
+  // Scegliendo il servizio l'orario tipico si compila da solo
+  if(el.id==="tSer"){
+    const s = servizio(el.value);
+    if(s && s.dalle && s.alle){
+      document.getElementById("tDa").value = s.dalle; document.getElementById("tA").value = s.alle;
+      const d = !!(s.dalle2&&s.alle2);
+      document.getElementById("tDoppio").checked = d; document.getElementById("boxDoppio").style.display = d?"grid":"none";
+      document.getElementById("tDa2").value = s.dalle2||""; document.getElementById("tA2").value = s.alle2||"";
+    }
+  }
+  if(el.id==="tDoppio"){ document.getElementById("boxDoppio").style.display = el.checked?"grid":"none"; }
+  if(el.id==="rSalta" || el.id==="rDal" || el.id==="rAl") contaRipeti();
+  if(el.id==="aSer" || el.id==="aDal" || el.id==="aAl") contaAssegna();
+  if(el.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno(document.querySelector('[data-act="salvaT"]')?.dataset.id||undefined);
+});
+document.addEventListener("input", e => {
+  if(e.target.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno(document.querySelector('[data-act="salvaT"]')?.dataset.id||undefined);
+});
+
+// Funzionamento senza internet (solo quando la pagina e' pubblicata su un sito)
+if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+render();
+
+/**
+ * Apre il pacchetto dell'ufficio e mostra il riepilogo. Se qualcosa non va lo
+ * dice in chiaro, invece di lasciare l'app muta.
+ */
+async function caricaPacco(pacco){
+  try{
+    const dati = await apriPacco(pacco);
+    if(!dati || !Array.isArray(dati.turni)) throw new Error("il messaggio non contiene turni");
+    paccoInAttesa = dati;
+    foglioImport(dati);
+  }catch(e){
+    alert("Non riesco a leggere i turni dell'ufficio.\n\n" + e.message + "\n\nChiedi all'ufficio di rimandare il messaggio.");
+  }
+}
+
+// Link aperto da WhatsApp: i dati stanno dopo il cancelletto. Si toglie subito
+// dall'indirizzo, cosi' ricaricando la pagina non si riapre tutto da capo.
+(function(){
+  const pacco = trovaPacco(location.hash);
+  if(!pacco) return;
+  try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+  caricaPacco(pacco);
+})();
+</script>
+</body>
+</html>
