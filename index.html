@@ -259,9 +259,22 @@ function trovaPacco(testo){
 const nelPeriodo = (t, dati) =>
   !!t.gid && t.data >= dati.dal && (!dati.al || t.data <= dati.al);
 
+/**
+ * Quello che l'ufficio dice di un turno: orari, nota e postazione.
+ * Si tiene da parte per capire, alla spedizione dopo, cosa ha cambiato
+ * l'ufficio e cosa invece ha corretto il capogruppo.
+ */
+const previstoDa = (n, servizioId) => ({
+  dalle:n.a, alle:n.b, dalle2:n.a2||"", alle2:n.b2||"", note:n.note||"", p:servizioId||"",
+});
+
 const stessoOrario = (a,b) =>
   (a?.dalle||"")===(b?.dalle||"") && (a?.alle||"")===(b?.alle||"") &&
   (a?.dalle2||"")===(b?.dalle2||"") && (a?.alle2||"")===(b?.alle2||"");
+
+/** L'ufficio ha cambiato qualcosa? Orari, nota o postazione. */
+const stessoPrevisto = (a,b) =>
+  stessoOrario(a,b) && (a?.note||"")===(b?.note||"") && (a?.p||"")===(b?.p||"");
 
 /**
  * Guarda cosa cambierebbe, senza cambiare niente: serve a mostrare il
@@ -274,13 +287,18 @@ function confrontaImport(dati){
   for(const n of dati.turni||[]){
     const v = perGid[n.g];
     if(!v){ nuovi++; continue; }
-    const prev = { dalle:n.a, alle:n.b, dalle2:n.a2||"", alle2:n.b2||"" };
-    if(stessoOrario(v.prev, prev) && v.data===n.d && !v.statoUff) invariati++; else modificati++;
+    // Qui la postazione non si confronta: servirebbe rifare tutta la mappa
+    // delle postazioni, e il conteggio e' solo un'anteprima
+    const prev = previstoDa(n, v.servizioId);
+    if(stessoPrevisto(v.prev, prev) && v.data===n.d && !v.statoUff) invariati++; else modificati++;
   }
-  // Spariti: c'erano, stanno nel periodo mandato, e stavolta non arrivano.
-  // Il periodo conta: se l'ufficio manda solo novembre, i turni di dicembre
-  // non sono "annullati", sono semplicemente fuori da quello che ha mandato.
-  const annullati = db.turni.filter(t => nelPeriodo(t, dati) && !arrivati.has(t.gid) && t.statoUff !== "annullato").length;
+  // Spariti. In un messaggio COMPLETO si capisce dal silenzio: c'erano, stanno
+  // nel periodo mandato, e stavolta non arrivano. In uno PARZIALE il silenzio
+  // vuol dire "non e' cambiato", quindi le cancellazioni l'ufficio le dice per
+  // nome nella lista `rimossi`.
+  const annullati = dati.parziale
+    ? db.turni.filter(t => t.gid && (dati.rimossi||[]).includes(t.gid) && t.statoUff !== "annullato").length
+    : db.turni.filter(t => nelPeriodo(t, dati) && !arrivati.has(t.gid) && t.statoUff !== "annullato").length;
   return { nuovi, modificati, invariati, annullati };
 }
 
@@ -335,7 +353,7 @@ function applicaImport(dati){
 
   for(const n of dati.turni||[]){
     arrivati.add(n.g);
-    const prev = { dalle:n.a, alle:n.b, dalle2:n.a2||"", alle2:n.b2||"" };
+    const prev = previstoDa(n, perPost[n.p]);
     const v = perGid[n.g];
 
     if(!v){
@@ -361,25 +379,30 @@ function applicaImport(dati){
     // faccia il nome che manda l'ufficio, vuol dire che non li ha smistati lui.
     if(v.uff === undefined && n.o && v.risorsaId === perOp[n.o]) v.uff = 1;
 
-    const cambiato = !stessoOrario(v.prev, prev) || v.data !== n.d;
+    // Cambiato dall'ufficio: orari, giorno, nota o postazione
+    const cambiato = !stessoPrevisto(v.prev, prev) || v.data !== n.d;
     // Lo svolto lo si tocca solo se lui non l'aveva gia' corretto
-    const nonToccato = !v.prev || stessoOrario(v, v.prev);
+    const orariNonToccati = !v.prev || stessoOrario(v, v.prev);
+    const notaNonToccata = !v.prev || (v.note||"") === (v.prev.note||"");
     v.data = n.d;
     v.servizioId = perPost[n.p] || v.servizioId;
-    if(n.note) v.note = n.note;
-    if(nonToccato){ v.dalle=prev.dalle; v.alle=prev.alle; v.dalle2=prev.dalle2; v.alle2=prev.alle2; }
+    if(notaNonToccata) v.note = prev.note;
+    if(orariNonToccati){ v.dalle=prev.dalle; v.alle=prev.alle; v.dalle2=prev.dalle2; v.alle2=prev.alle2; }
     v.prev = prev;
     v.statoUff = cambiato ? "modificato" : "";
     if(cambiato) esito.modificati++; else esito.invariati++;
   }
 
   // ── Quelli spariti: non si cancellano da soli, li conferma lui ────────
-  // Solo dentro il periodo mandato: quello che sta fuori non e' stato
-  // annullato, semplicemente l'ufficio stavolta non lo ha mandato.
-  for(const t of db.turni){
-    if(nelPeriodo(t, dati) && !arrivati.has(t.gid) && t.statoUff !== "annullato"){
-      t.statoUff = "annullato"; esito.annullati++;
-    }
+  // Messaggio parziale: le cancellazioni arrivano scritte per nome.
+  // Messaggio completo: si deducono dal silenzio, ma solo dentro il periodo
+  // mandato — quello che sta fuori non e' stato annullato, semplicemente
+  // l'ufficio stavolta non lo ha mandato.
+  const spariti = dati.parziale
+    ? db.turni.filter(t => t.gid && (dati.rimossi||[]).includes(t.gid))
+    : db.turni.filter(t => nelPeriodo(t, dati) && !arrivati.has(t.gid));
+  for(const t of spariti){
+    if(t.statoUff !== "annullato"){ t.statoUff = "annullato"; esito.annullati++; }
   }
 
   if(!db.imp.nome && dati.capo) db.imp.nome = dati.capo;
@@ -397,8 +420,10 @@ function foglioImport(dati){
   const c = confrontaImport(dati);
   const gg = (dati.dal||"").split("-").reverse().join("/");
   const voce = (n, testo, colore) => n ? `<div class="riga" style="padding:3px 0"><b style="width:46px;text-align:right;color:${colore}">${n}</b><span class="sp" style="padding-left:10px">${testo}</span></div>` : "";
+  const alGg = dati.al ? dati.al.split("-").reverse().join("/") : "";
   apriFoglio(`<h2>Turni dall'ufficio</h2>
-    <p class="muted" style="margin-top:0">${esc(dati.capo||"")} · dal <b>${gg}</b> in poi · ${(dati.turni||[]).length} turni su ${(dati.postazioni||[]).length} postazioni.</p>
+    <p class="muted" style="margin-top:0">${esc(dati.capo||"")} · ${alGg?`dal <b>${gg}</b> al <b>${alGg}</b>`:`dal <b>${gg}</b> in poi`}${
+      dati.parziale ? " · <b>solo le novità</b>" : ""}</p>
     <div class="card" style="margin:0">
       ${voce(c.nuovi, "turni nuovi, intestati come li manda l'ufficio", "#1d8a5e")}
       ${voce(c.modificati, "cambiati dall'ufficio", "#c78219")}
