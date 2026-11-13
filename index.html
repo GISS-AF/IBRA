@@ -671,6 +671,7 @@ function vistaAltro(){
       Ultimo backup: <b>${u?new Date(u).toLocaleString("it-IT"):"mai"}</b></p>
       <div class="btns"><button class="btn pri" data-act="backup">Salva backup</button><button class="btn" data-act="ripristina">Ripristina</button></div>
       <input type="file" id="fileRipr" accept=".json,application/json" style="display:none"></div>
+    ${cardAggiornamento()}
     <div class="card"><b>📨 Turni dall'ufficio</b><p class="muted" style="margin:4px 0 10px">
       Di solito basta <b>aprire il link</b> che ti manda l'ufficio su WhatsApp. Se il link non si apre, incolla qui il messaggio.
       ${db.imp.ultimoImport ? `<br>Ultimo caricamento: <b>${new Date(db.imp.ultimoImport.quando).toLocaleString("it-IT")}</b> (${db.imp.ultimoImport.turni} turni dal ${db.imp.ultimoImport.dal.split("-").reverse().join("/")}).` : ""}</p>
@@ -681,6 +682,32 @@ function vistaAltro(){
     <div class="card"><b>Dati sul telefono</b><p class="muted" style="margin:4px 0 10px">${db.risorse.length} risorse · ${db.servizi.length} servizi · ${db.turni.length} turni</p>
       <button class="btn dan full" data-act="cancellatutto">Cancella tutti i dati</button></div>
     <p class="muted" style="text-align:center">Ore Squadra · funziona anche senza internet</p>`;
+}
+
+/**
+ * Lo stato dell'aggiornamento automatico.
+ *
+ * Deve rispondere a una domanda sola: "quello che vedo e' aggiornato?".
+ * Per questo c'e' sempre scritto QUANDO, anche quando e' andato tutto bene:
+ * senza quella riga uno non sa se sta guardando i turni di oggi o di lunedi'.
+ */
+function cardAggiornamento(){
+  if(!db.imp.codice){
+    return `<div class="card"><b>🔄 Aggiornamento automatico</b>
+      <p class="muted" style="margin:4px 0 0">Non ancora attivo. Quando l'ufficio ti manda il <b>link</b>, aprilo una volta: da li' in poi i turni arrivano da soli, senza altri messaggi.</p></div>`;
+  }
+  const q = db.imp.quandoAgg ? new Date(db.imp.quandoAgg) : null;
+  const min = q ? Math.floor((Date.now()-q.getTime())/60000) : null;
+  const fa = min===null ? "mai" : min<2 ? "adesso" : min<60 ? `${min} minuti fa`
+    : min<1440 ? `${Math.floor(min/60)} ore fa` : `${Math.floor(min/1440)} giorni fa`;
+  const e = db.imp.esitoAgg;
+  return `<div class="card"><b>🔄 Aggiornamento automatico</b>
+    <p class="muted" style="margin:4px 0 10px">
+      Ultimo controllo: <b>${fa}</b>${q?` (${q.toLocaleString("it-IT")})`:""}<br>
+      ${!db.imp.parola ? `<span style="color:#b03a48">Manca la parola d'ordine: chiedila all'ufficio.</span><br>` : ""}
+      ${e ? `Ultima volta che è cambiato qualcosa: ${e.nuovi} nuovi · ${e.modificati} cambiati · ${e.annullati} annullati<br>` : ""}
+      I turni arrivano da soli quando apri l'app. Non serve nessun messaggio dall'ufficio.</p>
+    <div class="btns"><button class="btn pri" data-act="aggiornaOra">Controlla adesso</button><button class="btn" data-act="cambiaParola">Parola d'ordine</button></div></div>`;
 }
 
 const VISTE = { giorno:vistaGiorno, mese:vistaMese, riepilogo:vistaRiepilogo, liste:vistaListe, altro:vistaAltro };
@@ -881,6 +908,13 @@ document.addEventListener("click", e => {
       // Smistati da lui: il nome non e' piu' quello messo dall'ufficio
       ts.forEach(t=>{ t.risorsaId = chi; delete t.uff; });
       salva(); chiudiFoglio(); render(); toast(`${ts.length} turni passati a ${nomeR(chi)}`); break; }
+    case "salvaParola": {
+      const p = val("pwAgg");
+      if(p.length < 6){ toast("La parola d'ordine è di almeno 6 caratteri"); return; }
+      db.imp.parola = p; chiaveCache = null; salva(); chiudiFoglio(); render();
+      controllaAggiornamenti(true); break; }
+    case "aggiornaOra": controllaAggiornamenti(true); break;
+    case "cambiaParola": foglioParola(false); break;
     case "leggiIncollato": {
       const pacco = trovaPacco(val("incolla"));
       if(!pacco){ toast("Nel testo non trovo i turni: incolla tutto il messaggio"); return; }
@@ -979,13 +1013,145 @@ async function caricaPacco(pacco){
   }
 }
 
+/* =====================================================================
+   AGGIORNAMENTO DA SOLO
+   L'ufficio preme "Pubblica" e il file dei turni finisce sul sito. Qui lo si
+   va a prendere da soli: all'apertura, quando si torna sull'app, e ogni tanto
+   mentre e' aperta. Cosi' l'ufficio il link lo manda una volta sola.
+
+   Il file sul sito e' PUBBLICO, quindi e' cifrato: dentro ci sono i nomi della
+   squadra e gli indirizzi dei clienti. La parola d'ordine la da' l'ufficio a
+   voce, si scrive una volta e resta su questo telefono. Senza quella il file
+   e' una sfilza di lettere per chiunque, me compreso.
+   ===================================================================== */
+
+const ATTESA = 4*60*1000;        // ogni quanto riguardare, mentre l'app e' aperta
+let chiaveCache = null;          // ricavare la chiave costa un attimo: si tiene
+let controlloInCorso = false;
+let ultimoControllo = 0;
+
+/** Dalla parola d'ordine alla chiave. Stesso conto che fa il gestionale. */
+async function derivaChiave(parola, salt, iter){
+  const firma = `${parola}|${salt}|${iter}`;
+  if(chiaveCache && chiaveCache.firma === firma) return chiaveCache.k;
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(parola), "PBKDF2", false, ["deriveKey"]);
+  const k = await crypto.subtle.deriveKey(
+    { name:"PBKDF2", salt:daBase64url(salt), iterations:iter, hash:"SHA-256" },
+    base, { name:"AES-GCM", length:256 }, false, ["decrypt"]);
+  chiaveCache = { firma, k };
+  return k;
+}
+
+/** Apre il file cifrato. Dentro c'e' lo stesso pacchetto del link. */
+async function apriFileCifrato(file, parola){
+  if(!file || file.v !== 1 || !file.dati) throw new Error("il file dei turni non e' in un formato che conosco");
+  if(!crypto.subtle) throw new Error("questo telefono non sa aprire i file cifrati");
+  const k = await derivaChiave(parola, file.salt, file.iter || 210000);
+  let chiaro;
+  try{
+    chiaro = await crypto.subtle.decrypt({ name:"AES-GCM", iv:daBase64url(file.iv) }, k, daBase64url(file.dati));
+  }catch(e){
+    // Non si distingue parola sbagliata da file rovinato: e' giusto cosi',
+    // ma quello che succede davvero e' quasi sempre la parola
+    const err = new Error("parola d'ordine sbagliata"); err.parola = true; throw err;
+  }
+  return apriPacco(new TextDecoder().decode(chiaro));
+}
+
+/**
+ * Va a vedere se l'ufficio ha pubblicato qualcosa di nuovo.
+ *
+ * `manuale` = l'ha chiesto lui col pulsante: allora si parla anche quando non
+ * c'e' niente di nuovo. Da solo invece sta zitto, se no suonerebbe ogni volta
+ * che si riapre l'app.
+ */
+async function controllaAggiornamenti(manuale){
+  if(controlloInCorso) return;
+  if(!db.imp.codice){ if(manuale) toast("Non hai ancora il link dell'ufficio"); return; }
+  if(!db.imp.parola){ if(manuale) foglioParola(); return; }
+  controlloInCorso = true;
+  if(manuale) toast("Controllo…");
+  try{
+    // Niente scorciatoie del browser: si vuole il file di adesso
+    let r;
+    try{
+      r = await fetch(`t-${db.imp.codice}.json`, { cache:"no-store" });
+    }catch(e){
+      // "Failed to fetch" non dice niente a nessuno: quasi sempre e' la rete
+      throw new Error("non c'è internet, o il sito non risponde. I turni che hai restano, riprova più tardi.");
+    }
+    if(r.status === 404) throw new Error("l'ufficio non ha ancora pubblicato niente per te (codice " + db.imp.codice + ")");
+    if(!r.ok) throw new Error("il sito ha risposto " + r.status);
+    const file = await r.json();
+    ultimoControllo = Date.now();
+
+    // Gia' visto: l'ora e' l'unica cosa in chiaro, serve proprio a questo
+    if(file.ts && file.ts === db.imp.tsAgg){
+      db.imp.quandoAgg = new Date().toISOString(); salva();
+      if(manuale){ toast("Sei già aggiornato"); render(); }
+      return;
+    }
+
+    const dati = await apriFileCifrato(file, db.imp.parola);
+    if(!dati || !Array.isArray(dati.turni)) throw new Error("dentro non ci sono turni");
+    const e = applicaImport(dati);
+    db.imp.tsAgg = file.ts || new Date().toISOString();
+    db.imp.quandoAgg = new Date().toISOString();
+    db.imp.esitoAgg = e;
+    salva();
+    render();
+    const cambiati = e.nuovi + e.modificati + e.annullati;
+    if(cambiati) toast(`Aggiornato: ${e.nuovi} nuovi · ${e.modificati} cambiati · ${e.annullati} annullati`);
+    else if(manuale) toast("Sei già aggiornato");
+  }catch(err){
+    db.imp.erroreAgg = err.message; salva();
+    if(err.parola){
+      // Qui si ferma e si chiede: insistere da solo non serve a niente
+      db.imp.parola = ""; salva(); render();
+      if(manuale || document.visibilityState === "visible") foglioParola(true);
+    } else if(manuale){
+      toast("Non riesco ad aggiornare: " + err.message);
+    }
+  }finally{ controlloInCorso = false; }
+}
+
+/** La parola d'ordine: la si scrive una volta sola */
+function foglioParola(sbagliata){
+  apriFoglio(`<h2>Parola d'ordine</h2>
+    <p class="muted" style="margin-top:0">${sbagliata
+      ? "La parola non va bene: il file dell'ufficio non si apre. Richiedila all'ufficio e riprova."
+      : "I turni dell'ufficio sono protetti. Scrivi la parola che ti ha dato l'ufficio: te la chiedo una volta sola."}</p>
+    <label class="f">Parola d'ordine</label>
+    <input class="i" id="pwAgg" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="come te l'ha dettata l'ufficio">
+    <p class="muted">Resta su questo telefono. Serve solo ad aprire i turni, non e' la password di nessun sito.</p>
+    <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Dopo</button><button class="btn pri" data-act="salvaParola">Salva e scarica</button></div>`);
+  setTimeout(()=>document.getElementById("pwAgg")?.focus(), 150);
+}
+
+// Quando torna sull'app, e ogni tanto mentre ce l'ha aperta davanti
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible" && Date.now() - ultimoControllo > 60000) controllaAggiornamenti(false);
+});
+setInterval(() => { if(document.visibilityState === "visible") controllaAggiornamenti(false); }, ATTESA);
+
 // Link aperto da WhatsApp: i dati stanno dopo il cancelletto. Si toglie subito
 // dall'indirizzo, cosi' ricaricando la pagina non si riapre tutto da capo.
+//   #imp=...  il pacchetto intero dentro il link (la vecchia strada, resta)
+//   #c=...    il codice: i turni stanno sul sito e me li vado a prendere io
 (function(){
-  const pacco = trovaPacco(location.hash);
-  if(!pacco) return;
-  try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
-  caricaPacco(pacco);
+  const h = location.hash || "";
+  const codice = (h.match(/#c=([A-Za-z0-9_-]{4,20})/) || [])[1];
+  const pacco = trovaPacco(h);
+  if(codice || pacco){ try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){} }
+
+  if(codice){
+    if(db.imp.codice !== codice){ db.imp.codice = codice; db.imp.tsAgg = ""; salva(); }
+    if(!db.imp.parola) foglioParola(); else controllaAggiornamenti(true);
+    return;
+  }
+  if(pacco){ caricaPacco(pacco); return; }
+  // Apertura normale: si guarda se c'e' qualcosa di nuovo, senza disturbare
+  if(db.imp.codice) controllaAggiornamenti(false);
 })();
 </script>
 </body>
