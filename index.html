@@ -338,12 +338,13 @@ function applicaImport(dati){
     const v = perGid[n.g];
 
     if(!v){
-      // Se l'ufficio ha gia' messo un nome che non e' il capogruppo, si parte
-      // da quello; altrimenti il turno resta da assegnare.
-      const suo = n.o && perOp[n.o];
+      // Il turno arriva gia' intestato a chi lo ha nel gestionale — di norma
+      // il capogruppo stesso, perche' e' a lui che l'ufficio assegna tutto il
+      // lavoro della squadra. Poi lui gira agli altri quello che non fa di
+      // persona, con "Assegna in blocco".
       db.turni.push({
         id:uid(), gid:n.g, data:n.d, servizioId:perPost[n.p]||"",
-        risorsaId: (suo && n.o !== dati.capoId) ? suo : "",
+        risorsaId: (n.o && perOp[n.o]) || "",
         dalle:prev.dalle, alle:prev.alle, dalle2:prev.dalle2, alle2:prev.alle2,
         note:n.note||"", prev, statoUff:"",
       });
@@ -373,6 +374,9 @@ function applicaImport(dati){
   }
 
   if(!db.imp.nome && dati.capo) db.imp.nome = dati.capo;
+  // Chi e' il capogruppo fra le risorse: serve a "Assegna in blocco", che
+  // parte da lui perche' e' a lui che l'ufficio intesta tutto
+  if(dati.capoId && perOp[dati.capoId]) db.imp.capoRisorsa = perOp[dati.capoId];
   db.imp.ultimoImport = { quando:new Date().toISOString(), dal:dati.dal, turni:(dati.turni||[]).length };
   salva();
   return esito;
@@ -387,7 +391,7 @@ function foglioImport(dati){
   apriFoglio(`<h2>Turni dall'ufficio</h2>
     <p class="muted" style="margin-top:0">${esc(dati.capo||"")} · dal <b>${gg}</b> in poi · ${(dati.turni||[]).length} turni su ${(dati.postazioni||[]).length} postazioni.</p>
     <div class="card" style="margin:0">
-      ${voce(c.nuovi, "turni nuovi, da assegnare", "#1d8a5e")}
+      ${voce(c.nuovi, "turni nuovi, intestati come li manda l'ufficio", "#1d8a5e")}
       ${voce(c.modificati, "cambiati dall'ufficio", "#c78219")}
       ${voce(c.annullati, "annullati: te li segno e li togli tu", "#b03a48")}
       ${voce(c.invariati, "già a posto, non li tocco", "#6f6b61")}
@@ -397,26 +401,50 @@ function foglioImport(dati){
     <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiImport">Importa</button></div>`);
 }
 
-/* Assegna in blocco: la stessa persona su tanti turni da assegnare */
+/**
+ * Passa una serie di turni da una persona a un'altra, in un colpo solo.
+ *
+ * L'ufficio intesta tutto il lavoro della squadra al capogruppo: il suo
+ * mestiere e' girarne una parte ai ragazzi. Quindi qui si sceglie da chi si
+ * prende e a chi si da', e si restringe per postazione, giorni della
+ * settimana e periodo.
+ */
 function foglioAssegna(){
-  const daFare = db.turni.filter(t=>!t.risorsaId && t.statoUff!=="annullato");
-  const servIds = [...new Set(daFare.map(t=>t.servizioId))];
+  const vivi = db.turni.filter(t=>t.statoUff!=="annullato");
+  // Si parte da chi ne ha di piu': di norma il capogruppo
+  const conteggi = {};
+  for(const t of vivi) conteggi[t.risorsaId||"0"] = (conteggi[t.risorsaId||"0"]||0) + 1;
+  const partenza = db.imp.capoRisorsa && conteggi[db.imp.capoRisorsa]
+    ? db.imp.capoRisorsa
+    : Object.keys(conteggi).sort((a,b)=>conteggi[b]-conteggi[a])[0] || "0";
+  const date = vivi.map(t=>t.data).sort();
+
+  const vociDa = [`<option value="">Chiunque (${vivi.length})</option>`,
+    `<option value="0" ${partenza==="0"?"selected":""}>Da assegnare (${conteggi["0"]||0})</option>`,
+    ...attive(db.risorse).filter(r=>conteggi[r.id])
+      .map(r=>`<option value="${r.id}" ${partenza===r.id?"selected":""}>${esc(r.nome)} (${conteggi[r.id]})</option>`)].join("");
+
   apriFoglio(`<h2>Assegna in blocco</h2>
-    <p class="muted" style="margin-top:0">Hai <b>${daFare.length}</b> turni da assegnare. Scegli chi, e su quali.</p>
-    <label class="f">Chi</label><select class="i" id="aRis"><option value="">— scegli —</option>${attive(db.risorse).map(r=>`<option value="${r.id}">${esc(r.nome)}</option>`).join("")}</select>
-    <label class="f">Postazione</label><select class="i" id="aSer"><option value="">Tutte</option>${servIds.map(s=>`<option value="${s}">${esc(nomeS(s))} (${daFare.filter(t=>t.servizioId===s).length})</option>`).join("")}</select>
+    <p class="muted" style="margin-top:0">Sposta tanti turni da una persona a un'altra. Scegli da chi, a chi, e su quali.</p>
+    <label class="f">Adesso sono di</label><select class="i" id="aDa">${vociDa}</select>
+    <label class="f">Passali a</label><select class="i" id="aRis"><option value="">— scegli —</option>${attive(db.risorse).map(r=>`<option value="${r.id}">${esc(r.nome)}</option>`).join("")}</select>
+    <label class="f">Postazione</label><select class="i" id="aSer"><option value="">Tutte</option>${
+      [...new Set(vivi.map(t=>t.servizioId))].sort((a,b)=>nomeS(a).localeCompare(nomeS(b)))
+        .map(s=>`<option value="${s}">${esc(nomeS(s))}</option>`).join("")}</select>
     <label class="f">Solo questi giorni della settimana</label>
     <div class="chips" id="aGiorni">${[1,2,3,4,5,6,0].map(d=>`<button class="on" data-act="chipA" data-d="${d}">${GG[d]}</button>`).join("")}</div>
-    <div class="due"><div><label class="f">Dal</label><input class="i" type="date" id="aDal" value="${daFare.length?daFare.map(t=>t.data).sort()[0]:oggi()}"></div>
-      <div><label class="f">Al</label><input class="i" type="date" id="aAl" value="${daFare.length?daFare.map(t=>t.data).sort().slice(-1)[0]:oggi()}"></div></div>
-    <div class="totbox"><span>Turni che verranno assegnati</span><b id="aConta">0</b></div>
+    <div class="due"><div><label class="f">Dal</label><input class="i" type="date" id="aDal" value="${date[0]||oggi()}"></div>
+      <div><label class="f">Al</label><input class="i" type="date" id="aAl" value="${date[date.length-1]||oggi()}"></div></div>
+    <div class="totbox"><span>Turni che verranno spostati</span><b id="aConta">0</b></div>
     <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiAssegna">Assegna</button></div>`);
   contaAssegna();
 }
 function turniDaAssegnare(){
-  const ser = val("aSer"), dal = val("aDal"), al = val("aAl");
+  const da = val("aDa"), ser = val("aSer"), dal = val("aDal"), al = val("aAl");
   const gg = [...document.querySelectorAll("#aGiorni button.on")].map(b=>Number(b.dataset.d));
-  return db.turni.filter(t => !t.risorsaId && t.statoUff!=="annullato"
+  return db.turni.filter(t => t.statoUff!=="annullato"
+    // "" = chiunque · "0" = solo quelli senza nome · altrimenti quella persona
+    && (da === "" || (da === "0" ? !t.risorsaId : t.risorsaId === da))
     && (!ser || t.servizioId===ser)
     && (!dal || t.data>=dal) && (!al || t.data<=al)
     && gg.includes(daIso(t.data).getDay()));
@@ -480,7 +508,9 @@ function vistaGiorno(){
   }
   const daAss = db.turni.filter(x=>!x.risorsaId && x.statoUff!=="annullato").length;
   h += `<button class="btn pri full" data-act="nuovo" style="margin:4px 0 8px">+ Aggiungi turno</button>`;
-  if(daAss) h += `<button class="btn full" data-act="assegna" style="margin-bottom:8px">👤 Assegna in blocco (${daAss} da assegnare)</button>`;
+  // Serve sempre: l'ufficio intesta tutto al capogruppo, e il suo lavoro e'
+  // girarne una parte ai ragazzi
+  if(db.turni.length) h += `<button class="btn full" data-act="assegna" style="margin-bottom:8px">👤 Assegna in blocco${daAss?` (${daAss} da assegnare)`:""}</button>`;
   h += `<div class="btns"><button class="btn" data-act="copiaieri">Copia da ieri</button><button class="btn" data-act="ripeti" ${lista.length?"":"disabled"}>Ripeti su più giorni</button></div>`;
   return h;
 }
@@ -794,12 +824,14 @@ document.addEventListener("click", e => {
     case "assegna": foglioAssegna(); break;
     case "faiAssegna": {
       const chi = val("aRis");
-      if(!chi){ toast("Scegli chi ci va"); return; }
-      const ts = turniDaAssegnare();
-      if(!ts.length){ toast("Nessun turno da assegnare con questi filtri"); return; }
-      if(!confirm(`Assegno ${ts.length} turni a ${nomeR(chi)}?`)) return;
+      if(!chi){ toast("Scegli a chi li passi"); return; }
+      const ts = turniDaAssegnare().filter(t=>t.risorsaId !== chi);
+      if(!ts.length){ toast("Nessun turno da spostare con questi filtri"); return; }
+      const da = val("aDa");
+      const chiEra = da === "" ? "" : da === "0" ? " da «Da assegnare»" : ` da ${nomeR(da)}`;
+      if(!confirm(`Passo ${ts.length} turni${chiEra} a ${nomeR(chi)}?`)) return;
       ts.forEach(t=>{ t.risorsaId = chi; });
-      salva(); chiudiFoglio(); render(); toast(`${ts.length} turni assegnati a ${nomeR(chi)}`); break; }
+      salva(); chiudiFoglio(); render(); toast(`${ts.length} turni passati a ${nomeR(chi)}`); break; }
     case "leggiIncollato": {
       const pacco = trovaPacco(val("incolla"));
       if(!pacco){ toast("Nel testo non trovo i turni: incolla tutto il messaggio"); return; }
