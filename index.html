@@ -51,6 +51,8 @@ button.btn:active{transform:scale(.98)}
 .turno{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
 .turno .barra{width:5px;align-self:stretch;border-radius:3px;background:var(--verde)}
 .turno .op{font-weight:700}
+/* Chi ci va: sotto l'orario, in evidenza ma meno del nome del posto */
+.turno .chi{font-weight:600;color:var(--verde);margin-top:2px}
 /* Giallo: turno arrivato dall'ufficio e ancora senza nome. Sbiadito: annullato */
 .turno.daass{background:var(--giallo);border-color:var(--giallo-b)}
 .turno.daass .op{color:#6b4e00}
@@ -426,7 +428,7 @@ function foglioImport(dati){
       dati.parziale ? " · <b>solo le novità</b>" : ""}</p>
     <div class="card" style="margin:0">
       ${voce(c.nuovi, "turni nuovi, intestati come li manda l'ufficio", "#1d8a5e")}
-      ${voce(c.modificati, "cambiati dall'ufficio", "#c78219")}
+      ${voce(c.modificati, "aggiornati", "#c78219")}
       ${voce(c.annullati, "annullati: te li segno e li togli tu", "#b03a48")}
       ${voce(c.invariati, "già a posto, non li tocco", "#6f6b61")}
       ${!c.nuovi && !c.modificati && !c.annullati ? `<div class="muted">Non cambia niente: hai già tutto.</div>` : ""}
@@ -529,14 +531,17 @@ function vistaGiorno(){
   for(const t of lista){
     const daAssegnare = !t.risorsaId;
     const annullato = t.statoUff === "annullato";
+    // L'ordine e' quello con cui si legge un turno: DOVE si va, in che via,
+    // a che ora, e solo alla fine CHI ci va. Il posto e' la cosa che
+    // identifica il turno; il nome cambia spesso, il negozio no.
     h += `<div class="card turno ${daAssegnare?"daass":""} ${annullato?"annull":""}" data-act="modifica" data-id="${t.id}">
       <div class="barra" style="background:${coloreS(t.servizioId)}"></div>
-      <div class="sp"><div class="op">${esc(nomeR(t.risorsaId))}</div>
-        <div>${esc(nomeS(t.servizioId))}</div>
+      <div class="sp"><div class="op">${esc(nomeS(t.servizioId))}</div>
         ${servizio(t.servizioId)?.indirizzo ? `<div class="muted">${esc(servizio(t.servizioId).indirizzo)}</div>` : ""}
-        <div class="muted">${esc(orario(t))}${t.note?` · ${esc(t.note)}`:""}</div>
-        ${annullato ? `<div class="avviso">✕ Annullato dall'ufficio — aprilo e togli il turno</div>` : ""}
-        ${t.statoUff==="modificato" ? `<div class="avviso">✎ Cambiato dall'ufficio: previsto ${esc(orario(t.prev||{}))}</div>` : ""}</div>
+        <div>${esc(orario(t))}</div>
+        <div class="chi">${esc(nomeR(t.risorsaId))}</div>
+        ${t.note?`<div class="muted">${esc(t.note)}</div>`:""}
+        ${annullato ? `<div class="avviso">✕ Annullato dall'ufficio — aprilo e togli il turno</div>` : ""}</div>
       <div class="ore">${hm(minTurno(t))}</div></div>`;
   }
   const daAss = db.turni.filter(x=>!x.risorsaId && x.statoUff!=="annullato").length;
@@ -705,7 +710,11 @@ function foglioTurno(t){
     <label class="f">Note (facoltative)</label><input class="i" id="tNote" value="${esc(t.note||"")}" placeholder="Es. sostituisce Op2">
     ${t.gid ? `<div class="banner" style="margin:10px 0 0"><span>📨</span><span class="sp">
       ${t.statoUff==="annullato" ? "<b>Annullato dall'ufficio.</b> Se non si è lavorato, elimina il turno."
-        : t.statoUff==="modificato" ? `<b>Cambiato dall'ufficio.</b> Previsto: ${esc(orario(t.prev||{}))}`
+        /* La segnalazione "cambiato dall'ufficio" e' spenta per ora, su
+           richiesta: il turno modificato si comporta come gli altri e mostra
+           solo l'orario previsto. Il gestionale continua a riconoscere le
+           modifiche, quindi per riaccenderla basta rimettere qui il ramo
+           t.statoUff === "modificato", e in vistaGiorno il cartellino. */
         : `Turno dell'ufficio · previsto ${esc(orario(t.prev||{}))}`}
       ${t.prev && !stessoOrario(t, t.prev) ? "<br>Gli orari qui sotto sono quelli che hai corretto tu: restano." : ""}
     </span></div>` : ""}
