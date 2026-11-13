@@ -191,22 +191,24 @@ const turniMese = m => db.turni.filter(t=>t.data.startsWith(m)).sort((a,b)=>a.da
 const attive = arr => arr.filter(x=>!x.nascosto).sort((a,b)=>a.nome.localeCompare(b.nome));
 function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.style.display="block"; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display="none",2600); }
 
-/* Segmenti di lavoro di un turno in minuti dall'inizio del suo giorno */
-function segmenti(t){
-  const s=[]; const add=(a,b)=>{ if(!a||!b) return; const x=aMin(a); s.push([x, x+durata(a,b)]); };
-  add(t.dalle,t.alle); add(t.dalle2,t.alle2); return s;
-}
-/* Avvisi: stessa persona in due posti alla stessa ora, o troppe ore nel giorno */
+/**
+ * Avvisi su un turno.
+ *
+ * Il controllo delle sovrapposizioni non c'e' piu', per scelta dell'ufficio:
+ * il lavoro della squadra e' intestato tutto al capogruppo, quindi in un
+ * giorno risultano dieci turni suoi in dieci posti diversi — e va bene cosi',
+ * perche' il monte ore che gli si riconosce e' quello che si paga. Un avviso
+ * che suona su ogni riga non e' un avviso, e' rumore: si impara a non
+ * leggerlo, e il giorno che segnala una cosa vera non lo vede nessuno.
+ *
+ * Resta solo il tetto delle ore in un giorno, e solo sui turni che il
+ * capogruppo ha smistato di persona: li' il nome e' una sua scelta e il
+ * numero vuol dire qualcosa.
+ */
 function avvisi(t, escludiId){
   const out=[];
-  // Senza operatore non si puo' dire che "e' in due posti insieme": sono
-  // turni da assegnare, e normalmente sono tanti sullo stesso giorno
-  if(!t.risorsaId) return out;
-  const stessi = db.turni.filter(x=>x.data===t.data && x.risorsaId===t.risorsaId && x.id!==escludiId);
-  const mie = segmenti(t);
-  for(const x of stessi){
-    if(segmenti(x).some(([a,b])=>mie.some(([c,d])=>a<d&&c<b))){ out.push(`Sovrapposto con ${nomeS(x.servizioId)} (${orario(x)})`); }
-  }
+  if(!t.risorsaId || t.uff) return out;
+  const stessi = db.turni.filter(x=>x.data===t.data && x.risorsaId===t.risorsaId && x.id!==escludiId && !x.uff);
   const tot = stessi.reduce((s,x)=>s+minTurno(x),0)+minTurno(t);
   if(tot>12*60) out.push(`${nomeR(t.risorsaId)} supera le 12 ore nel giorno (${hm(tot)})`);
   return out;
@@ -347,10 +349,19 @@ function applicaImport(dati){
         risorsaId: (n.o && perOp[n.o]) || "",
         dalle:prev.dalle, alle:prev.alle, dalle2:prev.dalle2, alle2:prev.alle2,
         note:n.note||"", prev, statoUff:"",
+        // "uff" = il nome e' ancora quello dell'ufficio, lui non l'ha
+        // smistato. Finche' c'e', il turno non entra negli avvisi.
+        uff: 1,
       });
       esito.nuovi++;
       continue;
     }
+
+    // Turni entrati prima che esistesse il segno "uff": se hanno ancora in
+    // faccia il nome che manda l'ufficio, non li ha smistati lui. Senza
+    // questo, su quei turni gli avvisi resterebbero per sempre, perche' il
+    // nome del capogruppo e' su tutto.
+    if(v.uff === undefined && n.o && v.risorsaId === perOp[n.o]) v.uff = 1;
 
     const cambiato = !stessoOrario(v.prev, prev) || v.data !== n.d;
     // Lo svolto lo si tocca solo se lui non l'aveva gia' corretto
@@ -806,6 +817,8 @@ document.addEventListener("click", e => {
       if(id){
         const v = db.turni.find(x=>x.id===id);
         Object.assign(v, t);
+        // Aprendolo e salvandolo se n'e' preso carico: il nome adesso e' suo
+        delete v.uff;
         // Se l'ufficio aveva segnalato una modifica, aprendolo e salvando
         // l'ha vista: il segno si toglie. L'annullato invece resta finche'
         // non elimina il turno.
@@ -830,7 +843,8 @@ document.addEventListener("click", e => {
       const da = val("aDa");
       const chiEra = da === "" ? "" : da === "0" ? " da «Da assegnare»" : ` da ${nomeR(da)}`;
       if(!confirm(`Passo ${ts.length} turni${chiEra} a ${nomeR(chi)}?`)) return;
-      ts.forEach(t=>{ t.risorsaId = chi; });
+      // Smistati da lui: da adesso gli avvisi valgono
+      ts.forEach(t=>{ t.risorsaId = chi; delete t.uff; });
       salva(); chiudiFoglio(); render(); toast(`${ts.length} turni passati a ${nomeR(chi)}`); break; }
     case "leggiIncollato": {
       const pacco = trovaPacco(val("incolla"));
