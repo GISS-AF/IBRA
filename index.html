@@ -191,28 +191,19 @@ const turniMese = m => db.turni.filter(t=>t.data.startsWith(m)).sort((a,b)=>a.da
 const attive = arr => arr.filter(x=>!x.nascosto).sort((a,b)=>a.nome.localeCompare(b.nome));
 function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.style.display="block"; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display="none",2600); }
 
-/**
- * Avvisi su un turno.
+/*
+ * Qui stavano due controlli: la stessa persona in due posti alla stessa ora,
+ * e il tetto delle dodici ore in un giorno. Tolti tutti e due per scelta
+ * dell'ufficio.
  *
- * Il controllo delle sovrapposizioni non c'e' piu', per scelta dell'ufficio:
- * il lavoro della squadra e' intestato tutto al capogruppo, quindi in un
- * giorno risultano dieci turni suoi in dieci posti diversi — e va bene cosi',
- * perche' il monte ore che gli si riconosce e' quello che si paga. Un avviso
- * che suona su ogni riga non e' un avviso, e' rumore: si impara a non
- * leggerlo, e il giorno che segnala una cosa vera non lo vede nessuno.
+ * Il motivo: il lavoro della squadra e' intestato tutto al capogruppo, quindi
+ * in un giorno risultano dieci turni suoi in dieci posti diversi, e va bene
+ * cosi' — il monte ore che gli si riconosce e' quello che si paga. Un avviso
+ * che suona su ogni riga non e' un avviso, e' rumore.
  *
- * Resta solo il tetto delle ore in un giorno, e solo sui turni che il
- * capogruppo ha smistato di persona: li' il nome e' una sua scelta e il
- * numero vuol dire qualcosa.
+ * Restano le segnalazioni che arrivano dall'ufficio: "cambiato" e "annullato".
+ * Quelle non sono giudizi dell'app, sono notizie, e si vedono ancora.
  */
-function avvisi(t, escludiId){
-  const out=[];
-  if(!t.risorsaId || t.uff) return out;
-  const stessi = db.turni.filter(x=>x.data===t.data && x.risorsaId===t.risorsaId && x.id!==escludiId && !x.uff);
-  const tot = stessi.reduce((s,x)=>s+minTurno(x),0)+minTurno(t);
-  if(tot>12*60) out.push(`${nomeR(t.risorsaId)} supera le 12 ore nel giorno (${hm(tot)})`);
-  return out;
-}
 
 /* =====================================================================
    TURNI DALL'UFFICIO
@@ -349,8 +340,9 @@ function applicaImport(dati){
         risorsaId: (n.o && perOp[n.o]) || "",
         dalle:prev.dalle, alle:prev.alle, dalle2:prev.dalle2, alle2:prev.alle2,
         note:n.note||"", prev, statoUff:"",
-        // "uff" = il nome e' ancora quello dell'ufficio, lui non l'ha
-        // smistato. Finche' c'e', il turno non entra negli avvisi.
+        // "uff" = il nome e' ancora quello dell'ufficio, il capogruppo non
+        // l'ha ancora smistato. Non si vede a schermo: e' la traccia di
+        // cosa ha gia' guardato, se un domani serve.
         uff: 1,
       });
       esito.nuovi++;
@@ -358,9 +350,7 @@ function applicaImport(dati){
     }
 
     // Turni entrati prima che esistesse il segno "uff": se hanno ancora in
-    // faccia il nome che manda l'ufficio, non li ha smistati lui. Senza
-    // questo, su quei turni gli avvisi resterebbero per sempre, perche' il
-    // nome del capogruppo e' su tutto.
+    // faccia il nome che manda l'ufficio, vuol dire che non li ha smistati lui.
     if(v.uff === undefined && n.o && v.risorsaId === perOp[n.o]) v.uff = 1;
 
     const cambiato = !stessoOrario(v.prev, prev) || v.data !== n.d;
@@ -504,7 +494,6 @@ function vistaGiorno(){
       })()}</div></div>`;
   if(!lista.length) h += `<div class="card vuoto">Nessun turno in questo giorno.</div>`;
   for(const t of lista){
-    const av = avvisi(t,t.id);
     const daAssegnare = !t.risorsaId;
     const annullato = t.statoUff === "annullato";
     h += `<div class="card turno ${daAssegnare?"daass":""} ${annullato?"annull":""}" data-act="modifica" data-id="${t.id}">
@@ -513,8 +502,7 @@ function vistaGiorno(){
         <div>${esc(nomeS(t.servizioId))}</div>
         <div class="muted">${esc(orario(t))}${t.note?` · ${esc(t.note)}`:""}</div>
         ${annullato ? `<div class="avviso">✕ Annullato dall'ufficio — aprilo e togli il turno</div>` : ""}
-        ${t.statoUff==="modificato" ? `<div class="avviso">✎ Cambiato dall'ufficio: previsto ${esc(orario(t.prev||{}))}</div>` : ""}
-        ${av.map(a=>`<div class="avviso">⚠ ${esc(a)}</div>`).join("")}</div>
+        ${t.statoUff==="modificato" ? `<div class="avviso">✎ Cambiato dall'ufficio: previsto ${esc(orario(t.prev||{}))}</div>` : ""}</div>
       <div class="ore">${hm(minTurno(t))}</div></div>`;
   }
   const daAss = db.turni.filter(x=>!x.risorsaId && x.statoUff!=="annullato").length;
@@ -680,20 +668,16 @@ function foglioTurno(t){
       ${t.prev && !stessoOrario(t, t.prev) ? "<br>Gli orari qui sotto sono quelli che hai corretto tu: restano." : ""}
     </span></div>` : ""}
     <div class="totbox"><span>Totale ore giornata</span><b id="tTot">0:00</b></div>
-    <div id="tAvvisi"></div>
     <div class="btns" style="margin-top:14px">${nuovo?"":`<button class="btn dan" data-act="eliminaT" data-id="${t.id}">Elimina</button>`}<button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaT" data-id="${nuovo?"":t.id}">Salva</button></div>`);
-  aggiornaTotTurno(t.id);
+  aggiornaTotTurno();
 }
 function leggiTurno(){
   const doppio = document.getElementById("tDoppio").checked;
   return { data:val("tData"), risorsaId:val("tRis"), servizioId:val("tSer"), dalle:val("tDa"), alle:val("tA"),
     dalle2: doppio?val("tDa2"):"", alle2: doppio?val("tA2"):"", note:val("tNote") };
 }
-function aggiornaTotTurno(id){
-  const t = leggiTurno();
-  document.getElementById("tTot").textContent = hm(minTurno(t));
-  const av = (t.risorsaId && t.data && t.dalle && t.alle) ? avvisi(t, id) : [];
-  document.getElementById("tAvvisi").innerHTML = av.map(a=>`<div class="avviso">⚠ ${esc(a)}</div>`).join("");
+function aggiornaTotTurno(){
+  document.getElementById("tTot").textContent = hm(minTurno(leggiTurno()));
 }
 
 /* Ripeti il giorno su un periodo */
@@ -843,7 +827,7 @@ document.addEventListener("click", e => {
       const da = val("aDa");
       const chiEra = da === "" ? "" : da === "0" ? " da «Da assegnare»" : ` da ${nomeR(da)}`;
       if(!confirm(`Passo ${ts.length} turni${chiEra} a ${nomeR(chi)}?`)) return;
-      // Smistati da lui: da adesso gli avvisi valgono
+      // Smistati da lui: il nome non e' piu' quello messo dall'ufficio
       ts.forEach(t=>{ t.risorsaId = chi; delete t.uff; });
       salva(); chiudiFoglio(); render(); toast(`${ts.length} turni passati a ${nomeR(chi)}`); break; }
     case "leggiIncollato": {
@@ -917,10 +901,10 @@ document.addEventListener("change", e => {
   if(el.id==="tDoppio"){ document.getElementById("boxDoppio").style.display = el.checked?"grid":"none"; }
   if(el.id==="rSalta" || el.id==="rDal" || el.id==="rAl") contaRipeti();
   if(el.id==="aSer" || el.id==="aDal" || el.id==="aAl") contaAssegna();
-  if(el.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno(document.querySelector('[data-act="salvaT"]')?.dataset.id||undefined);
+  if(el.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno();
 });
 document.addEventListener("input", e => {
-  if(e.target.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno(document.querySelector('[data-act="salvaT"]')?.dataset.id||undefined);
+  if(e.target.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno();
 });
 
 // Funzionamento senza internet (solo quando la pagina e' pubblicata su un sito)
