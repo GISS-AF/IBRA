@@ -146,7 +146,7 @@ const MM = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","d
 const TINTE = ["#01696f","#2a5d9f","#c78219","#8a4f9e","#b03a48","#1d8a5e","#5a6b2f","#a0522d"];
 
 /* ---------- dati ---------- */
-function vuoto(){ return { versione:1, risorse:[], servizi:[], turni:[], imp:{ nome:"", ultimoBackup:null } }; }
+function vuoto(){ return { versione:1, risorse:[], servizi:[], turni:[], imp:{ nome:"" } }; }
 function carica(){
   try{
     const s = localStorage.getItem(CHIAVE);
@@ -361,8 +361,8 @@ function applicaImport(dati){
     if(!v){
       // Il turno arriva gia' intestato a chi lo ha nel gestionale — di norma
       // il capogruppo stesso, perche' e' a lui che l'ufficio assegna tutto il
-      // lavoro della squadra. Poi lui gira agli altri quello che non fa di
-      // persona, con "Assegna in blocco".
+      // lavoro della squadra. Poi lui apre il turno e ci mette il nome di chi
+      // l'ha fatto davvero.
       db.turni.push({
         id:uid(), gid:n.g, data:n.d, servizioId:perPost[n.p]||"",
         risorsaId: (n.o && perOp[n.o]) || "",
@@ -381,6 +381,17 @@ function applicaImport(dati){
     // faccia il nome che manda l'ufficio, vuol dire che non li ha smistati lui.
     if(v.uff === undefined && n.o && v.risorsaId === perOp[n.o]) v.uff = 1;
 
+    /*
+     * IL NOME NON SI TOCCA MAI.
+     *
+     * Su un turno che c'e' gia', `risorsaId` resta quello che ha messo lui,
+     * qualunque cosa dica l'ufficio: al capogruppo serve contare le ore dei
+     * suoi ragazzi, e quel nome e' la sua parola su chi ha lavorato. L'ufficio
+     * intesta tutto a lui, quindi il nome che manda non saprebbe comunque chi
+     * c'era davvero. Vale anche se nel gestionale il turno viene spostato su
+     * un altro operatore: qui cambiano il giorno, gli orari, la postazione e
+     * la nota — mai la persona.
+     */
     // Cambiato dall'ufficio: orari, giorno, nota o postazione
     const cambiato = !stessoPrevisto(v.prev, prev) || v.data !== n.d;
     // Lo svolto lo si tocca solo se lui non l'aveva gia' corretto
@@ -408,8 +419,7 @@ function applicaImport(dati){
   }
 
   if(!db.imp.nome && dati.capo) db.imp.nome = dati.capo;
-  // Chi e' il capogruppo fra le risorse: serve a "Assegna in blocco", che
-  // parte da lui perche' e' a lui che l'ufficio intesta tutto
+  // Chi e' il capogruppo fra le risorse, cosi' si sa qual e' il suo nome
   if(dati.capoId && perOp[dati.capoId]) db.imp.capoRisorsa = perOp[dati.capoId];
   db.imp.ultimoImport = { quando:new Date().toISOString(), dal:dati.dal, turni:(dati.turni||[]).length };
   salva();
@@ -437,55 +447,11 @@ function foglioImport(dati){
     <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiImport">Importa</button></div>`);
 }
 
-/**
- * Passa una serie di turni da una persona a un'altra, in un colpo solo.
- *
- * L'ufficio intesta tutto il lavoro della squadra al capogruppo: il suo
- * mestiere e' girarne una parte ai ragazzi. Quindi qui si sceglie da chi si
- * prende e a chi si da', e si restringe per postazione, giorni della
- * settimana e periodo.
+/*
+ * Qui stava "Assegna in blocco", che spostava tanti turni da una persona a
+ * un'altra in un colpo solo. Tolto per scelta dell'ufficio: lui lavora giorno
+ * per giorno, tocca il turno e ci mette il nome di chi l'ha fatto davvero.
  */
-function foglioAssegna(){
-  const vivi = db.turni.filter(t=>t.statoUff!=="annullato");
-  // Si parte da chi ne ha di piu': di norma il capogruppo
-  const conteggi = {};
-  for(const t of vivi) conteggi[t.risorsaId||"0"] = (conteggi[t.risorsaId||"0"]||0) + 1;
-  const partenza = db.imp.capoRisorsa && conteggi[db.imp.capoRisorsa]
-    ? db.imp.capoRisorsa
-    : Object.keys(conteggi).sort((a,b)=>conteggi[b]-conteggi[a])[0] || "0";
-  const date = vivi.map(t=>t.data).sort();
-
-  const vociDa = [`<option value="">Chiunque (${vivi.length})</option>`,
-    `<option value="0" ${partenza==="0"?"selected":""}>Da assegnare (${conteggi["0"]||0})</option>`,
-    ...attive(db.risorse).filter(r=>conteggi[r.id])
-      .map(r=>`<option value="${r.id}" ${partenza===r.id?"selected":""}>${esc(r.nome)} (${conteggi[r.id]})</option>`)].join("");
-
-  apriFoglio(`<h2>Assegna in blocco</h2>
-    <p class="muted" style="margin-top:0">Sposta tanti turni da una persona a un'altra. Scegli da chi, a chi, e su quali.</p>
-    <label class="f">Adesso sono di</label><select class="i" id="aDa">${vociDa}</select>
-    <label class="f">Passali a</label><select class="i" id="aRis"><option value="">— scegli —</option>${attive(db.risorse).map(r=>`<option value="${r.id}">${esc(r.nome)}</option>`).join("")}</select>
-    <label class="f">Postazione</label><select class="i" id="aSer"><option value="">Tutte</option>${
-      [...new Set(vivi.map(t=>t.servizioId))].sort((a,b)=>dove(a).localeCompare(dove(b)))
-        .map(s=>`<option value="${s}">${esc(dove(s))}</option>`).join("")}</select>
-    <label class="f">Solo questi giorni della settimana</label>
-    <div class="chips" id="aGiorni">${[1,2,3,4,5,6,0].map(d=>`<button class="on" data-act="chipA" data-d="${d}">${GG[d]}</button>`).join("")}</div>
-    <div class="due"><div><label class="f">Dal</label><input class="i" type="date" id="aDal" value="${date[0]||oggi()}"></div>
-      <div><label class="f">Al</label><input class="i" type="date" id="aAl" value="${date[date.length-1]||oggi()}"></div></div>
-    <div class="totbox"><span>Turni che verranno spostati</span><b id="aConta">0</b></div>
-    <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiAssegna">Assegna</button></div>`);
-  contaAssegna();
-}
-function turniDaAssegnare(){
-  const da = val("aDa"), ser = val("aSer"), dal = val("aDal"), al = val("aAl");
-  const gg = [...document.querySelectorAll("#aGiorni button.on")].map(b=>Number(b.dataset.d));
-  return db.turni.filter(t => t.statoUff!=="annullato"
-    // "" = chiunque · "0" = solo quelli senza nome · altrimenti quella persona
-    && (da === "" || (da === "0" ? !t.risorsaId : t.risorsaId === da))
-    && (!ser || t.servizioId===ser)
-    && (!dal || t.data>=dal) && (!al || t.data<=al)
-    && gg.includes(daIso(t.data).getDay()));
-}
-function contaAssegna(){ const e=document.getElementById("aConta"); if(e) e.textContent = turniDaAssegnare().length; }
 
 /* ---------- stato della schermata ---------- */
 const stato = { vista:"giorno", giorno:oggi(), mese:oggi().slice(0,7), riep:"op", liste:"risorse" };
@@ -494,17 +460,16 @@ function render(){
   document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on", b.dataset.v===stato.vista));
   document.getElementById("chi").textContent = db.imp.nome ? `Capogruppo: ${db.imp.nome}` : "Tocca Altro per mettere il tuo nome";
   const m = document.getElementById("main");
-  m.innerHTML = bannerBackup() + VISTE[stato.vista]();
+  m.innerHTML = VISTE[stato.vista]();
   window.scrollTo(0,0);
 }
 
-function bannerBackup(){
-  if(!db.turni.length) return "";
-  const u = db.imp.ultimoBackup;
-  const giorni = u ? Math.floor((Date.now()-new Date(u).getTime())/86400000) : null;
-  if(giorni!==null && giorni<7) return "";
-  return `<div class="banner no-stampa"><span>💾</span><span class="sp">${u?`Ultimo backup ${giorni} giorni fa.`:"Non hai ancora fatto un backup."} Se perdi il telefono perdi le ore.</span><button class="btn" data-act="backup">Salva</button></div>`;
-}
+/*
+ * Qui stava l'avviso "fai un backup". Tolto con il backup stesso, per scelta
+ * dell'ufficio: i turni arrivano dal gestionale e si riprendono da li' quante
+ * volte serve. Resta fuori solo quello che fa lui sopra ai turni — chi ha
+ * lavorato e gli orari che corregge — e quello vive su questo telefono.
+ */
 
 /* ---------- vista GIORNO ---------- */
 function vistaGiorno(){
@@ -544,12 +509,13 @@ function vistaGiorno(){
         ${annullato ? `<div class="avviso">✕ Annullato dall'ufficio — aprilo e togli il turno</div>` : ""}</div>
       <div class="ore">${hm(minTurno(t))}</div></div>`;
   }
-  const daAss = db.turni.filter(x=>!x.risorsaId && x.statoUff!=="annullato").length;
-  h += `<button class="btn pri full" data-act="nuovo" style="margin:4px 0 8px">+ Aggiungi turno</button>`;
-  // Serve sempre: l'ufficio intesta tutto al capogruppo, e il suo lavoro e'
-  // girarne una parte ai ragazzi
-  if(db.turni.length) h += `<button class="btn full" data-act="assegna" style="margin-bottom:8px">👤 Assegna in blocco${daAss?` (${daAss} da assegnare)`:""}</button>`;
-  h += `<div class="btns"><button class="btn" data-act="copiaieri">Copia da ieri</button><button class="btn" data-act="ripeti" ${lista.length?"":"disabled"}>Ripeti su più giorni</button></div>`;
+  /*
+   * Qui stavano "Aggiungi turno", "Assegna in blocco", "Copia da ieri" e
+   * "Ripeti su più giorni". Tolti per scelta dell'ufficio: i turni arrivano
+   * dal gestionale e si aggiornano da soli, quindi crearne o duplicarne a
+   * mano qui dentro vorrebbe dire scrivere righe che l'ufficio non conosce.
+   * Lui lavora giorno per giorno: tocca il turno e lo sistema.
+   */
   return h;
 }
 
@@ -664,13 +630,8 @@ function vistaListe(){
 
 /* ---------- vista ALTRO ---------- */
 function vistaAltro(){
-  const u = db.imp.ultimoBackup;
   return `<div class="card"><label class="f" style="margin-top:0">Il tuo nome (compare su stampe ed Excel)</label>
       <input class="i" id="nomeCapo" value="${esc(db.imp.nome)}" placeholder="Es. Ibrahim ..." data-act-change="nome"></div>
-    <div class="card"><b>💾 Backup</b><p class="muted" style="margin:4px 0 10px">I dati stanno solo su questo telefono. Salva un backup ogni settimana (mandalo a te stesso su WhatsApp o mail): se cambi o perdi il telefono lo ripristini da qui.<br>
-      Ultimo backup: <b>${u?new Date(u).toLocaleString("it-IT"):"mai"}</b></p>
-      <div class="btns"><button class="btn pri" data-act="backup">Salva backup</button><button class="btn" data-act="ripristina">Ripristina</button></div>
-      <input type="file" id="fileRipr" accept=".json,application/json" style="display:none"></div>
     ${cardAggiornamento()}
     <div class="card"><b>📨 Turni dall'ufficio</b><p class="muted" style="margin:4px 0 10px">
       Di solito basta <b>aprire il link</b> che ti manda l'ufficio su WhatsApp. Se il link non si apre, incolla qui il messaggio.
@@ -758,32 +719,11 @@ function aggiornaTotTurno(){
   document.getElementById("tTot").textContent = hm(minTurno(leggiTurno()));
 }
 
-/* Ripeti il giorno su un periodo */
-function foglioRipeti(){
-  const g = stato.giorno, fine = spostaGiorno(g,6);
-  apriFoglio(`<h2>Ripeti su più giorni</h2>
-    <p class="muted" style="margin-top:0">Copia i ${turniDel(g).length} turni di <b>${esc(dataBreve(g))}</b> sui giorni scelti.</p>
-    <div class="due"><div><label class="f">Dal</label><input class="i" type="date" id="rDal" value="${spostaGiorno(g,1)}"></div><div><label class="f">Al</label><input class="i" type="date" id="rAl" value="${fine}"></div></div>
-    <label class="f">Solo questi giorni della settimana</label>
-    <div class="chips" id="rGiorni">${[1,2,3,4,5,6,0].map(d=>`<button class="on" data-act="chip" data-d="${d}">${GG[d]}</button>`).join("")}</div>
-    <label class="check"><input type="checkbox" id="rSalta" checked> Salta i giorni che hanno già dei turni</label>
-    <div class="totbox"><span>Giorni che verranno compilati</span><b id="rConta">0</b></div>
-    <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="faiRipeti">Copia</button></div>`);
-  contaRipeti();
-}
-function giorniRipeti(){
-  const dal=val("rDal"), al=val("rAl"); if(!dal||!al||al<dal) return [];
-  const ok = [...document.querySelectorAll("#rGiorni button.on")].map(b=>Number(b.dataset.d));
-  const salta = document.getElementById("rSalta").checked, out=[];
-  for(let g=dal; g<=al && out.length<370; g=spostaGiorno(g,1)){
-    if(g===stato.giorno) continue;
-    if(!ok.includes(daIso(g).getDay())) continue;
-    if(salta && db.turni.some(t=>t.data===g)) continue;
-    out.push(g);
-  }
-  return out;
-}
-function contaRipeti(){ document.getElementById("rConta").textContent = giorniRipeti().length; }
+/*
+ * Qui stava "Ripeti su più giorni", che copiava i turni di un giorno su un
+ * periodo. Tolto con "Copia da ieri" e "Aggiungi turno", per la stessa
+ * ragione: i turni li decide l'ufficio e arrivano da soli.
+ */
 
 /* Risorsa e servizio */
 function foglioRisorsa(r){
@@ -810,7 +750,7 @@ function foglioServizio(s){
   setTimeout(()=>document.getElementById("sNome").focus(),50);
 }
 
-/* ---------- file: backup, ripristino, Excel ---------- */
+/* ---------- file: Excel ---------- */
 async function consegnaFile(nome, contenuto, tipo){
   const blob = new Blob([contenuto], { type:tipo });
   // Sul telefono, se si puo', si apre "Condividi" (WhatsApp, mail, Drive...)
@@ -822,22 +762,13 @@ async function consegnaFile(nome, contenuto, tipo){
   document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
   return true;
 }
-async function backup(){
-  const ok = await consegnaFile(`ore-squadra-backup-${oggi()}.json`, JSON.stringify(db,null,1), "application/json");
-  if(ok){ db.imp.ultimoBackup = new Date().toISOString(); salva(); render(); toast("Backup salvato"); }
-}
-function ripristina(file){
-  const fr = new FileReader();
-  fr.onload = () => {
-    try{
-      const d = JSON.parse(fr.result);
-      if(!Array.isArray(d.turni) || !Array.isArray(d.risorse) || !Array.isArray(d.servizi)) throw new Error("non è un backup di Ore Squadra");
-      if(!confirm(`Il backup contiene ${d.risorse.length} risorse, ${d.servizi.length} servizi e ${d.turni.length} turni.\nSostituisce TUTTI i dati attuali. Continuo?`)) return;
-      const v = vuoto(); db = { ...v, ...d, imp:{ ...v.imp, ...(d.imp||{}) } }; salva(); render(); toast("Backup ripristinato");
-    }catch(e){ alert("File non valido: "+e.message); }
-  };
-  fr.readAsText(file);
-}
+/*
+ * Qui stavano il salvataggio e il ripristino del backup. Tolti per scelta
+ * dell'ufficio: i turni arrivano dal gestionale e si ripubblicano quante volte
+ * serve, quindi il telefono non e' piu' l'unica copia di quelli. Resta fuori
+ * dal gestionale solo quello che mette lui sopra ai turni — chi ha lavorato e
+ * gli orari che corregge — e per portarsi via quello c'e' l'Excel del mese.
+ */
 function csvMese(){
   const m = stato.mese, lista = turniMese(m);
   if(!lista.length){ toast(`Nessun turno in ${nomeMese(m)}`); return; }
@@ -869,7 +800,6 @@ document.addEventListener("click", e => {
     case "riep": stato.riep = el.dataset.v; render(); break;
     case "liste": stato.liste = el.dataset.v; render(); break;
     case "chiudi": chiudiFoglio(); break;
-    case "nuovo": foglioTurno(null); break;
     case "modifica": foglioTurno(db.turni.find(t=>t.id===id)); break;
     case "salvaT": {
       const t = leggiTurno();
@@ -888,26 +818,6 @@ document.addEventListener("click", e => {
       } else { db.turni.push({ id:uid(), ...t }); }
       salva(); chiudiFoglio(); stato.giorno = t.data; stato.mese = t.data.slice(0,7); render(); toast("Turno salvato"); break; }
     case "eliminaT": if(confirm("Elimino questo turno?")){ db.turni = db.turni.filter(t=>t.id!==id); salva(); chiudiFoglio(); render(); } break;
-    case "copiaieri": {
-      const ieri = turniDel(spostaGiorno(stato.giorno,-1));
-      if(!ieri.length){ toast("Il giorno prima non ha turni"); return; }
-      if(turniDel(stato.giorno).length && !confirm("Questo giorno ha già dei turni: aggiungo anche quelli di ieri?")) return;
-      ieri.forEach(t=>db.turni.push({ ...t, id:uid(), data:stato.giorno })); salva(); render(); toast(`Copiati ${ieri.length} turni`); break; }
-    case "ripeti": foglioRipeti(); break;
-    case "chip": el.classList.toggle("on"); contaRipeti(); break;
-    case "chipA": el.classList.toggle("on"); contaAssegna(); break;
-    case "assegna": foglioAssegna(); break;
-    case "faiAssegna": {
-      const chi = val("aRis");
-      if(!chi){ toast("Scegli a chi li passi"); return; }
-      const ts = turniDaAssegnare().filter(t=>t.risorsaId !== chi);
-      if(!ts.length){ toast("Nessun turno da spostare con questi filtri"); return; }
-      const da = val("aDa");
-      const chiEra = da === "" ? "" : da === "0" ? " da «Da assegnare»" : ` da ${nomeR(da)}`;
-      if(!confirm(`Passo ${ts.length} turni${chiEra} a ${nomeR(chi)}?`)) return;
-      // Smistati da lui: il nome non e' piu' quello messo dall'ufficio
-      ts.forEach(t=>{ t.risorsaId = chi; delete t.uff; });
-      salva(); chiudiFoglio(); render(); toast(`${ts.length} turni passati a ${nomeR(chi)}`); break; }
     case "salvaParola": {
       const p = val("pwAgg");
       if(p.length < 6){ toast("La parola d'ordine è di almeno 6 caratteri"); return; }
@@ -928,11 +838,6 @@ document.addEventListener("click", e => {
       render();
       toast(`${e.nuovi} nuovi · ${e.modificati} cambiati · ${e.annullati} annullati`);
       break; }
-    case "faiRipeti": {
-      const giorni = giorniRipeti(), base = turniDel(stato.giorno);
-      if(!giorni.length){ toast("Nessun giorno da compilare"); return; }
-      giorni.forEach(g=>base.forEach(t=>db.turni.push({ ...t, id:uid(), data:g })));
-      salva(); chiudiFoglio(); render(); toast(`Copiati su ${giorni.length} giorni`); break; }
     case "nuovaR": foglioRisorsa(null); break;
     case "modR": foglioRisorsa(risorsa(id)); break;
     case "salvaR": {
@@ -956,19 +861,16 @@ document.addEventListener("click", e => {
       const n = db.turni.filter(t=>t.servizioId===id).length;
       if(n){ alert(`Non si può eliminare: ha ${n} turni registrati.\nSpunta "Nascondi" se il servizio è finito.`); return; }
       if(confirm("Elimino questo servizio?")){ db.servizi = db.servizi.filter(s=>s.id!==id); salva(); chiudiFoglio(); render(); } break; }
-    case "backup": backup(); break;
-    case "ripristina": document.getElementById("fileRipr").click(); break;
     case "csv": csvMese(); break;
     case "stampa": document.querySelectorAll("details").forEach(d=>d.open=true); setTimeout(()=>window.print(),100); break;
     case "cancellatutto":
-      if(confirm("Cancello TUTTI i dati da questo telefono?") && confirm("Sicuro? Senza backup non si recuperano.")){ db = vuoto(); salva(); render(); }
+      if(confirm("Cancello TUTTI i dati da questo telefono?") && confirm("Sicuro? I turni l'ufficio li rimanda, ma i nomi che hai messo tu e gli orari che hai corretto si perdono.")){ db = vuoto(); salva(); render(); }
       break;
   }
 });
 
 document.addEventListener("change", e => {
   const el = e.target;
-  if(el.id==="fileRipr" && el.files[0]){ ripristina(el.files[0]); el.value=""; return; }
   const a = el.dataset.actChange;
   if(a==="sceglidata" && el.value){ stato.giorno = el.value; render(); }
   if(a==="sceglimese" && el.value){ stato.mese = el.value; render(); }
@@ -984,8 +886,6 @@ document.addEventListener("change", e => {
     }
   }
   if(el.id==="tDoppio"){ document.getElementById("boxDoppio").style.display = el.checked?"grid":"none"; }
-  if(el.id==="rSalta" || el.id==="rDal" || el.id==="rAl") contaRipeti();
-  if(el.id==="aSer" || el.id==="aDal" || el.id==="aAl") contaAssegna();
   if(el.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno();
 });
 document.addEventListener("input", e => {
