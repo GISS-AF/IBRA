@@ -68,7 +68,9 @@ button.btn:active{transform:scale(.98)}
 .cal .g{background:var(--carta);border:1px solid var(--bordo);border-radius:7px;min-height:52px;padding:4px;font-size:12px;display:flex;flex-direction:column;cursor:pointer}
 .cal .g.vuota{visibility:hidden}
 .cal .g .n{font-weight:700}
-.cal .g .o{margin-top:auto;font-weight:800;color:var(--verde);font-size:12px;font-variant-numeric:tabular-nums}
+/* Il numero dei clienti del giorno: prima qui c'erano le ore ("91:15"), che
+   prendevano tutta la larghezza. "N.7" sta largo, quindi si puo' leggere piu' grande */
+.cal .g .o{margin-top:auto;font-weight:800;color:var(--verde);font-size:14px;font-variant-numeric:tabular-nums}
 .cal .g.oggi{outline:2px solid var(--verde)}
 .cal .g.dom .n{color:var(--rosso)}
 table.t{width:100%;border-collapse:collapse;font-size:13px}
@@ -184,6 +186,9 @@ const servizio = id => db.servizi.find(s=>s.id===id);
 // assegnato: non e' un errore, e' lavoro da smistare
 const nomeR = id => !id ? "Da assegnare" : (risorsa(id)?.nome || "(operatore eliminato)");
 const nomeS = id => servizio(id)?.nome || "(servizio eliminato)";
+/** Nome e indirizzo insieme: serve dove due negozi della stessa catena
+ *  si chiamano uguale e bisogna capire di quale si parla. */
+const dove = id => { const s = servizio(id); return s?.indirizzo ? `${s.nome} · ${s.indirizzo}` : nomeS(id); };
 const coloreS = id => { const i=db.servizi.findIndex(s=>s.id===id); return TINTE[(i<0?0:i)%TINTE.length]; };
 const orario = t => `${t.dalle}–${t.alle}` + (t.dalle2&&t.alle2 ? ` + ${t.dalle2}–${t.alle2}` : "");
 const turniDel = g => db.turni.filter(t=>t.data===g).sort((a,b)=>nomeR(a.risorsaId).localeCompare(nomeR(b.risorsaId))||a.dalle.localeCompare(b.dalle));
@@ -308,15 +313,18 @@ function applicaImport(dati){
     let s = (p.k ? db.servizi.find(x=>x.gid===p.k) : null)
          || db.servizi.find(x=>!x.gid && !serUsati.has(x.id) && uguale(x.nome,p.n) && (!x.indirizzo || !p.i || uguale(x.indirizzo,p.i)));
     if(!s){
-      // Nome gia' in uso da un altro negozio: ci si mette l'indirizzo dietro,
-      // altrimenti nell'elenco si vedono due voci identiche
-      let nome = p.n;
-      if(db.servizi.some(x=>uguale(x.nome,nome)) && p.i) nome = `${p.n} · ${p.i}`;
-      s = { id:uid(), nome, indirizzo:p.i||"", dalle:"", alle:"", dalle2:"", alle2:"", orePreviste:"", nascosto:false, gid:p.k||null };
+      // Il nome resta quello del cliente, anche se un altro negozio si chiama
+      // uguale: a distinguerli ci pensa l'indirizzo, che si mostra sempre
+      // accanto al nome. Attaccarlo dentro al nome faceva due righe diverse —
+      // "ACTION" e "ACTION · Via Lorenteggio" — per due cose dello stesso tipo.
+      s = { id:uid(), nome:p.n, indirizzo:p.i||"", dalle:"", alle:"", dalle2:"", alle2:"", orePreviste:"", nascosto:false, gid:p.k||null };
       db.servizi.push(s); esito.servizi++;
     }
     if(!s.gid && p.k) s.gid = p.k;
     if(!s.indirizzo && p.i) s.indirizzo = p.i;
+    // Postazioni create dalla versione di prima, con l'indirizzo dentro al
+    // nome: si rimette a posto il nome, l'indirizzo e' gia' nel suo campo
+    if(p.i && s.nome === `${p.n} · ${p.i}`) s.nome = p.n;
     serUsati.add(s.id);
     perPost[p.p] = s.id;
   }
@@ -430,8 +438,8 @@ function foglioAssegna(){
     <label class="f">Adesso sono di</label><select class="i" id="aDa">${vociDa}</select>
     <label class="f">Passali a</label><select class="i" id="aRis"><option value="">— scegli —</option>${attive(db.risorse).map(r=>`<option value="${r.id}">${esc(r.nome)}</option>`).join("")}</select>
     <label class="f">Postazione</label><select class="i" id="aSer"><option value="">Tutte</option>${
-      [...new Set(vivi.map(t=>t.servizioId))].sort((a,b)=>nomeS(a).localeCompare(nomeS(b)))
-        .map(s=>`<option value="${s}">${esc(nomeS(s))}</option>`).join("")}</select>
+      [...new Set(vivi.map(t=>t.servizioId))].sort((a,b)=>dove(a).localeCompare(dove(b)))
+        .map(s=>`<option value="${s}">${esc(dove(s))}</option>`).join("")}</select>
     <label class="f">Solo questi giorni della settimana</label>
     <div class="chips" id="aGiorni">${[1,2,3,4,5,6,0].map(d=>`<button class="on" data-act="chipA" data-d="${d}">${GG[d]}</button>`).join("")}</div>
     <div class="due"><div><label class="f">Dal</label><input class="i" type="date" id="aDal" value="${date[0]||oggi()}"></div>
@@ -500,6 +508,7 @@ function vistaGiorno(){
       <div class="barra" style="background:${coloreS(t.servizioId)}"></div>
       <div class="sp"><div class="op">${esc(nomeR(t.risorsaId))}</div>
         <div>${esc(nomeS(t.servizioId))}</div>
+        ${servizio(t.servizioId)?.indirizzo ? `<div class="muted">${esc(servizio(t.servizioId).indirizzo)}</div>` : ""}
         <div class="muted">${esc(orario(t))}${t.note?` · ${esc(t.note)}`:""}</div>
         ${annullato ? `<div class="avviso">✕ Annullato dall'ufficio — aprilo e togli il turno</div>` : ""}
         ${t.statoUff==="modificato" ? `<div class="avviso">✎ Cambiato dall'ufficio: previsto ${esc(orario(t.prev||{}))}</div>` : ""}</div>
@@ -520,6 +529,11 @@ function vistaMese(){
   const primo = new Date(a,b-1,1), nGiorni = new Date(a,b,0).getDate();
   const lista = turniMese(m);
   const perGiorno = {}; for(const t of lista) perGiorno[t.data]=(perGiorno[t.data]||0)+minTurno(t);
+  // Nel calendario non vanno le ore ma QUANTI CLIENTI ci sono quel giorno:
+  // e' il numero che dice al capogruppo quanti posti deve coprire. Le ore
+  // restano, in grande, toccando il giorno.
+  const clientiGiorno = {};
+  for(const t of lista) (clientiGiorno[t.data] ||= new Set()).add(t.servizioId);
   const tot = lista.reduce((s,t)=>s+minTurno(t),0);
   let h = navMese() + `<div class="card riga"><div><div class="muted">Totale ore del mese</div><div class="big">${hm(tot)}</div></div><div class="sp"></div>
     <div class="muted" style="text-align:right">${lista.length} turni<br>${Object.keys(perGiorno).length} giorni lavorati</div></div>
@@ -527,9 +541,12 @@ function vistaMese(){
   for(let i=0;i<(primo.getDay()+6)%7;i++) h+=`<div class="g vuota"></div>`;
   for(let d=1; d<=nGiorni; d++){
     const g = `${m}-${pad(d)}`, dt=daIso(g);
-    h += `<div class="g ${g===oggi()?"oggi":""} ${dt.getDay()===0?"dom":""}" data-act="apri" data-g="${g}"><span class="n">${d}</span>${perGiorno[g]?`<span class="o">${hm(perGiorno[g])}</span>`:""}</div>`;
+    const nCli = clientiGiorno[g]?.size || 0;
+    h += `<div class="g ${g===oggi()?"oggi":""} ${dt.getDay()===0?"dom":""}" data-act="apri" data-g="${g}"`
+      + ` title="${nCli?`${nCli} client${nCli===1?"e":"i"} · ${hm(perGiorno[g])} ore`:"niente"}">`
+      + `<span class="n">${d}</span>${nCli?`<span class="o">N.${nCli}</span>`:""}</div>`;
   }
-  return h + `</div><p class="muted" style="text-align:center">Tocca un giorno per vedere o aggiungere i turni.</p>`;
+  return h + `</div><p class="muted" style="text-align:center"><b>N.</b> è quanti clienti ci sono quel giorno. Tocca un giorno per vedere i turni e le ore.</p>`;
 }
 function navMese(){
   return `<div class="navdata no-stampa"><button class="freccia" data-act="mese" data-n="-1">‹</button>
@@ -656,7 +673,7 @@ function foglioTurno(t){
   apriFoglio(`<h2>${nuovo?"Nuovo turno":"Modifica turno"}</h2>
     <label class="f">Giorno</label><input class="i" type="date" id="tData" value="${t.data}">
     <label class="f">Chi va a lavorare</label><select class="i" id="tRis"><option value="">— scegli —</option>${ris.map(r=>`<option value="${r.id}" ${r.id===t.risorsaId?"selected":""}>${esc(r.nome)}</option>`).join("")}</select>
-    <label class="f">Dove (servizio)</label><select class="i" id="tSer"><option value="">— scegli —</option>${ser.map(s=>`<option value="${s.id}" ${s.id===t.servizioId?"selected":""}>${esc(s.nome)}</option>`).join("")}</select>
+    <label class="f">Dove (servizio)</label><select class="i" id="tSer"><option value="">— scegli —</option>${ser.map(s=>`<option value="${s.id}" ${s.id===t.servizioId?"selected":""}>${esc(dove(s.id))}</option>`).join("")}</select>
     <div class="due"><div><label class="f">Dalle</label><input class="i" type="time" id="tDa" value="${t.dalle}"></div><div><label class="f">Alle</label><input class="i" type="time" id="tA" value="${t.alle}"></div></div>
     <label class="check"><input type="checkbox" id="tDoppio" ${doppio?"checked":""}> Secondo turno nello stesso giorno</label>
     <div class="due" id="boxDoppio" style="display:${doppio?"grid":"none"}"><div><label class="f">Dalle 2</label><input class="i" type="time" id="tDa2" value="${t.dalle2||""}"></div><div><label class="f">Alle 2</label><input class="i" type="time" id="tA2" value="${t.alle2||""}"></div></div>
