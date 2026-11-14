@@ -179,7 +179,7 @@ const dataBreve = s => { const d=daIso(s); return `${GG[d.getDay()]} ${d.getDate
 const aMin = t => { const [h,m]=(t||"0:0").split(":").map(Number); return (h||0)*60+(m||0); };
 // Durata in minuti; se l'orario passa la mezzanotte (22:00-06:00) arriva al mattino dopo
 const durata = (a,b) => { if(!a||!b) return 0; let m=aMin(b)-aMin(a); if(m<0) m+=1440; return m; };
-const minTurno = t => durata(t.dalle,t.alle) + ((t.dalle2&&t.alle2) ? durata(t.dalle2,t.alle2) : 0);
+const minParte = (a,b,a2,b2) => durata(a,b) + ((a2&&b2) ? durata(a2,b2) : 0);
 const hm = m => `${Math.floor(m/60)}:${pad(Math.round(m%60))}`;
 const decimali = m => (Math.round(m/60*100)/100).toString().replace(".",",");
 const risorsa = id => db.risorse.find(r=>r.id===id);
@@ -193,6 +193,24 @@ const nomeS = id => servizio(id)?.nome || "(servizio eliminato)";
 const dove = id => { const s = servizio(id); return s?.indirizzo ? `${s.nome} · ${s.indirizzo}` : nomeS(id); };
 const coloreS = id => { const i=db.servizi.findIndex(s=>s.id===id); return TINTE[(i<0?0:i)%TINTE.length]; };
 const orario = t => `${t.dalle}–${t.alle}` + (t.dalle2&&t.alle2 ? ` + ${t.dalle2}–${t.alle2}` : "");
+const orarioB = t => `${t.bDalle}–${t.bAlle}` + (t.bDalle2&&t.bAlle2 ? ` + ${t.bDalle2}–${t.bAlle2}` : "");
+
+/**
+ * Chi lavora in questo turno, e per quante ore ciascuno.
+ *
+ * L'ufficio manda una riga sola: il posto e le ore da coprire. Il capogruppo
+ * ci mette i nomi, e quelle ore se le possono dividere in due persone — o
+ * farle insieme. Da qui passano TUTTI i conti (giornata, mese, riepiloghi,
+ * Excel): cosi' le ore del secondo non spariscono da nessuna parte.
+ */
+function parti(t){
+  const out = [{ risorsaId:t.risorsaId||"", min:minParte(t.dalle,t.alle,t.dalle2,t.alle2), orario:orario(t) }];
+  if(t.risorsaB || t.bDalle) out.push({ risorsaId:t.risorsaB||"", min:minParte(t.bDalle,t.bAlle,t.bDalle2,t.bAlle2), orario:orarioB(t), secondo:true });
+  return out;
+}
+const minTurno = t => parti(t).reduce((s,p)=>s+p.min,0);
+/** Le ore che l'ufficio ha dato per questo turno: e' il tetto da non passare */
+const minUfficio = t => t.prev ? minParte(t.prev.dalle,t.prev.alle,t.prev.dalle2,t.prev.alle2) : 0;
 const turniDel = g => db.turni.filter(t=>t.data===g).sort((a,b)=>nomeR(a.risorsaId).localeCompare(nomeR(b.risorsaId))||a.dalle.localeCompare(b.dalle));
 const turniMese = m => db.turni.filter(t=>t.data.startsWith(m)).sort((a,b)=>a.data.localeCompare(b.data)||a.dalle.localeCompare(b.dalle));
 const attive = arr => arr.filter(x=>!x.nascosto).sort((a,b)=>a.nome.localeCompare(b.nome));
@@ -473,10 +491,11 @@ function render(){
 
 /* ---------- vista GIORNO ---------- */
 function vistaGiorno(){
-  if(!db.risorse.length || !db.servizi.length){
+  if(!db.turni.length){
     return `<div class="card vuoto"><div style="font-size:34px">👋</div>
-      <p><b>Benvenuto!</b><br>Per iniziare aggiungi le tue <b>risorse</b> (chi lavora con te) e i <b>servizi</b> (dove si lavora).</p>
-      <button class="btn pri" data-act="vista" data-v="liste">Vai alle liste</button></div>`;
+      <p><b>Benvenuto!</b><br>I turni arrivano dall'ufficio e compaiono qui da soli.<br>
+      Se non vedi niente, vai in <b>Altro</b> e tocca «Controlla adesso».</p>
+      <button class="btn pri" data-act="vista" data-v="altro">Vai in Altro</button></div>`;
   }
   const g = stato.giorno, lista = turniDel(g);
   const tot = lista.reduce((s,t)=>s+minTurno(t),0);
@@ -488,7 +507,7 @@ function vistaGiorno(){
     <div class="card riga"><div><div class="muted">Totale ore del giorno</div><div class="big">${hm(tot)}</div></div><div class="sp"></div>
       <div class="muted" style="text-align:right">${lista.length} turn${lista.length===1?"o":"i"}<br>${(()=>{
         // I turni senza nome non sono "una persona": si contano a parte
-        const p = new Set(lista.filter(t=>t.risorsaId).map(t=>t.risorsaId)).size;
+        const p = new Set(lista.flatMap(t=>parti(t)).map(x=>x.risorsaId).filter(Boolean)).size;
         const d = lista.filter(t=>!t.risorsaId).length;
         return [p?`${p} person${p===1?"a":"e"}`:"", d?`${d} da assegnare`:""].filter(Boolean).join("<br>") || "—";
       })()}</div></div>`;
@@ -503,8 +522,8 @@ function vistaGiorno(){
       <div class="barra" style="background:${coloreS(t.servizioId)}"></div>
       <div class="sp"><div class="op">${esc(nomeS(t.servizioId))}</div>
         ${servizio(t.servizioId)?.indirizzo ? `<div class="muted">${esc(servizio(t.servizioId).indirizzo)}</div>` : ""}
-        <div>${esc(orario(t))}</div>
-        <div class="chi">${esc(nomeR(t.risorsaId))}</div>
+        ${parti(t).map(p=>`<div>${esc(p.orario)}</div><div class="chi">${esc(nomeR(p.risorsaId))}</div>`).join("")}
+        ${t.risorsaB?`<div class="muted">${t.insieme?"Insieme":"Si dividono il turno"}</div>`:""}
         ${t.note?`<div class="muted">${esc(t.note)}</div>`:""}
         ${annullato ? `<div class="avviso">✕ Annullato dall'ufficio — aprilo e togli il turno</div>` : ""}</div>
       <div class="ore">${hm(minTurno(t))}</div></div>`;
@@ -561,21 +580,29 @@ function vistaRiepilogo(){
   h += `<div class="btns no-stampa" style="margin-top:6px"><button class="btn" data-act="csv">📄 Excel del mese</button><button class="btn" data-act="stampa">🖨️ Stampa / PDF</button></div>`;
   return h;
 }
+/**
+ * Le ore di ciascuno nel mese.
+ *
+ * Si ragiona per PARTI, non per turni: in un turno possono esserci due
+ * persone, e le ore di ognuna devono finire sotto il suo nome. E' il conto
+ * che serve al capogruppo per pagare i suoi.
+ */
 function riepOperatori(lista){
   const per = {};
-  for(const t of lista){ (per[t.risorsaId] ||= []).push(t); }
+  for(const t of lista) for(const p of parti(t)){ if(p.min || p.risorsaId) (per[p.risorsaId] ||= []).push({ t, p }); }
   const ids = Object.keys(per).sort((a,b)=>nomeR(a).localeCompare(nomeR(b)));
   let h = "";
   for(const id of ids){
-    const ts = per[id], tot = ts.reduce((s,t)=>s+minTurno(t),0);
-    const giorni = {}; for(const t of ts) (giorni[t.data] ||= []).push(t);
+    const ts = per[id], tot = ts.reduce((s,x)=>s+x.p.min,0);
+    const giorni = {}; for(const x of ts) (giorni[x.t.data] ||= []).push(x);
     let righe = "";
     for(const g of Object.keys(giorni).sort()){
-      const gt = giorni[g], totG = gt.reduce((s,t)=>s+minTurno(t),0);
-      gt.forEach((t,i)=>{
+      const gt = giorni[g], totG = gt.reduce((s,x)=>s+x.p.min,0);
+      gt.forEach((x,i)=>{
+        const t = x.t;
         righe += `<tr>${i===0?`<td rowspan="${gt.length}">${esc(dataBreve(g))}</td>`:""}
           <td>${esc(nomeS(t.servizioId))}${servizio(t.servizioId)?.indirizzo?`<div class="muted">${esc(servizio(t.servizioId).indirizzo)}</div>`:""}</td>
-          <td class="r">${esc(orario(t)).replace(" + ","<br>")}</td>
+          <td class="r">${esc(x.p.orario).replace(" + ","<br>")}</td>
           ${i===0?`<td class="r num" rowspan="${gt.length}">${hm(totG)}</td>`:""}</tr>`;
       });
     }
@@ -594,7 +621,7 @@ function riepServizi(lista){
   let h = "";
   for(const id of ids){
     const ts = per[id], tot = ts.reduce((s,t)=>s+minTurno(t),0), s = servizio(id);
-    const perOp = {}; for(const t of ts) perOp[t.risorsaId]=(perOp[t.risorsaId]||0)+minTurno(t);
+    const perOp = {}; for(const t of ts) for(const p of parti(t)){ if(p.min||p.risorsaId) perOp[p.risorsaId]=(perOp[p.risorsaId]||0)+p.min; }
     let prev = "";
     if(s && s.orePreviste){
       const diff = tot - s.orePreviste*60;
@@ -612,18 +639,21 @@ function riepServizi(lista){
 }
 
 /* ---------- vista LISTE ---------- */
+/*
+ * Solo le persone. I posti dove si lavora stavano qui accanto, in una seconda
+ * linguetta: tolti, perche' li decide l'ufficio e arrivano con i turni.
+ */
 function vistaListe(){
-  const r = stato.liste==="risorse";
-  const arr = (r?db.risorse:db.servizi).slice().sort((a,b)=>(!!a.nascosto-!!b.nascosto)||a.nome.localeCompare(b.nome));
-  let h = `<div class="seg"><button class="${r?"on":""}" data-act="liste" data-v="risorse">Risorse (${db.risorse.length})</button><button class="${!r?"on":""}" data-act="liste" data-v="servizi">Servizi (${db.servizi.length})</button></div>
-    <p class="muted" style="margin-top:0">${r?"Le persone che mandi a lavorare.":"I posti dove si lavora, con l'orario tipico: quando scegli il servizio l'orario si compila da solo."}</p>
-    <button class="btn pri full" data-act="${r?"nuovaR":"nuovoS"}" style="margin-bottom:10px">+ ${r?"Aggiungi risorsa":"Aggiungi servizio"}</button><div class="card">`;
-  if(!arr.length) h += `<div class="vuoto">Ancora nessun${r?"a risorsa":" servizio"}.</div>`;
+  const arr = db.risorse.slice().sort((a,b)=>(!!a.nascosto-!!b.nascosto)||a.nome.localeCompare(b.nome));
+  let h = `<p class="muted" style="margin-top:0">Le persone che mandi a lavorare. Arrivano dall'ufficio, ma puoi aggiungerne e correggere i nomi.</p>
+    <button class="btn pri full" data-act="nuovaR" style="margin-bottom:10px">+ Aggiungi persona</button><div class="card">`;
+  if(!arr.length) h += `<div class="vuoto">Ancora nessuna persona.</div>`;
   for(const x of arr){
-    const n = db.turni.filter(t=>r?t.risorsaId===x.id:t.servizioId===x.id).length;
-    h += `<div class="lista-el" data-act="${r?"modR":"modS"}" data-id="${x.id}">${r?"":`<span style="width:10px;height:10px;border-radius:50%;background:${coloreS(x.id)}"></span>`}
-      <div class="sp"><div style="font-weight:700">${esc(x.nome)}</div><div class="muted">${r?esc(x.tel||""):esc([x.indirizzo, x.dalle&&x.alle?orario(x):""].filter(Boolean).join(" · "))}</div></div>
-      ${x.nascosto?`<span class="pill">nascost${r?"a":"o"}</span>`:""}<span class="muted">${n} turni</span></div>`;
+    // I turni dove compare, come primo o come secondo operatore
+    const n = db.turni.filter(t=>t.risorsaId===x.id||t.risorsaB===x.id).length;
+    h += `<div class="lista-el" data-act="modR" data-id="${x.id}">
+      <div class="sp"><div style="font-weight:700">${esc(x.nome)}</div><div class="muted">${esc(x.tel||"")}</div></div>
+      ${x.nascosto?`<span class="pill">nascosta</span>`:""}<span class="muted">${n} turni</span></div>`;
   }
   return h + `</div>`;
 }
@@ -679,44 +709,137 @@ function chiudiFoglio(){ document.getElementById("foglio").style.display="none";
 document.getElementById("velo").onclick = chiudiFoglio;
 const val = id => (document.getElementById(id)?.value ?? "").trim();
 
-/* Turno: nuovo o modifica */
+/**
+ * La scheda del turno.
+ *
+ * Il turno lo decide l'ufficio: giorno e posto sono scritti, non si toccano.
+ * Quello che mette il capogruppo e' CHI ci va e a che ora — da solo, o in due
+ * dividendosi le ore, o in due insieme.
+ *
+ * In fondo c'e' il conto che gli serve davvero: le ore dei suoi contro le ore
+ * che l'ufficio gli riconosce. Quelle non si possono passare, perche' il monte
+ * ore e' quello che si paga.
+ */
 function foglioTurno(t){
-  const nuovo = !t;
-  t = t || { data:stato.giorno, risorsaId:"", servizioId:"", dalle:"", alle:"", dalle2:"", alle2:"", note:"" };
-  const ris = attive(db.risorse), ser = attive(db.servizi);
-  // in modifica la persona o il servizio nascosti devono restare scelti
-  if(t.risorsaId && !ris.find(r=>r.id===t.risorsaId) && risorsa(t.risorsaId)) ris.push(risorsa(t.risorsaId));
-  if(t.servizioId && !ser.find(s=>s.id===t.servizioId) && servizio(t.servizioId)) ser.push(servizio(t.servizioId));
+  if(!t) return;
+  const elenco = (sel) => {
+    const ris = attive(db.risorse);
+    // Una persona nascosta che pero' e' gia' su questo turno deve restare
+    if(sel && !ris.find(r=>r.id===sel) && risorsa(sel)) ris.push(risorsa(sel));
+    return ris.map(r=>`<option value="${r.id}" ${r.id===sel?"selected":""}>${esc(r.nome)}</option>`).join("");
+  };
   const doppio = !!(t.dalle2||t.alle2);
-  apriFoglio(`<h2>${nuovo?"Nuovo turno":"Modifica turno"}</h2>
-    <label class="f">Giorno</label><input class="i" type="date" id="tData" value="${t.data}">
-    <label class="f">Chi va a lavorare</label><select class="i" id="tRis"><option value="">— scegli —</option>${ris.map(r=>`<option value="${r.id}" ${r.id===t.risorsaId?"selected":""}>${esc(r.nome)}</option>`).join("")}</select>
-    <label class="f">Dove (servizio)</label><select class="i" id="tSer"><option value="">— scegli —</option>${ser.map(s=>`<option value="${s.id}" ${s.id===t.servizioId?"selected":""}>${esc(dove(s.id))}</option>`).join("")}</select>
-    <div class="due"><div><label class="f">Dalle</label><input class="i" type="time" id="tDa" value="${t.dalle}"></div><div><label class="f">Alle</label><input class="i" type="time" id="tA" value="${t.alle}"></div></div>
-    <label class="check"><input type="checkbox" id="tDoppio" ${doppio?"checked":""}> Secondo turno nello stesso giorno</label>
+  const inDue = !!(t.risorsaB || t.bDalle);
+  const doppioB = !!(t.bDalle2||t.bAlle2);
+  const s = servizio(t.servizioId);
+
+  apriFoglio(`<h2>Turno</h2>
+    <div class="totbox" style="margin-top:0"><span>Giorno</span><b>${esc(dataLunga(t.data))}</b></div>
+    <div class="card" style="margin:8px 0 0"><div style="font-weight:700">${esc(nomeS(t.servizioId))}</div>
+      ${s?.indirizzo?`<div class="muted">${esc(s.indirizzo)}</div>`:""}
+      <div class="muted">Giorno e luogo li decide l'ufficio: qui non si cambiano.</div></div>
+
+    <label class="f">Chi va a lavorare</label>
+    <select class="i" id="tRis"><option value="">— scegli —</option>${elenco(t.risorsaId)}</select>
+    <div class="due"><div><label class="f">Dalle</label><input class="i" type="time" id="tDa" value="${t.dalle||""}"></div><div><label class="f">Alle</label><input class="i" type="time" id="tA" value="${t.alle||""}"></div></div>
+    <label class="check"><input type="checkbox" id="tDoppio" ${doppio?"checked":""}> Rientra più tardi (secondo orario)</label>
     <div class="due" id="boxDoppio" style="display:${doppio?"grid":"none"}"><div><label class="f">Dalle 2</label><input class="i" type="time" id="tDa2" value="${t.dalle2||""}"></div><div><label class="f">Alle 2</label><input class="i" type="time" id="tA2" value="${t.alle2||""}"></div></div>
-    <label class="f">Note (facoltative)</label><input class="i" id="tNote" value="${esc(t.note||"")}" placeholder="Es. sostituisce Op2">
+
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="tInDue" ${inDue?"checked":""}> <b>Sono in due su questo turno</b></label>
+    <div id="boxB" style="display:${inDue?"block":"none"}">
+      <label class="f">Secondo operatore</label>
+      <select class="i" id="tRisB"><option value="">— scegli —</option>${elenco(t.risorsaB)}</select>
+      <label class="check"><input type="checkbox" id="tInsieme" ${t.insieme?"checked":""}> Lavorano insieme, stessi orari</label>
+      <div class="due"><div><label class="f">Dalle</label><input class="i" type="time" id="tBDa" value="${t.bDalle||""}"></div><div><label class="f">Alle</label><input class="i" type="time" id="tBA" value="${t.bAlle||""}"></div></div>
+      <label class="check"><input type="checkbox" id="tBDoppio" ${doppioB?"checked":""}> Rientra più tardi (secondo orario)</label>
+      <div class="due" id="boxBDoppio" style="display:${doppioB?"grid":"none"}"><div><label class="f">Dalle 2</label><input class="i" type="time" id="tBDa2" value="${t.bDalle2||""}"></div><div><label class="f">Alle 2</label><input class="i" type="time" id="tBA2" value="${t.bAlle2||""}"></div></div>
+    </div>
+
+    <label class="f">Note (facoltative)</label><input class="i" id="tNote" value="${esc(t.note||"")}" placeholder="Es. è entrato più tardi">
+
     ${t.gid ? `<div class="banner" style="margin:10px 0 0"><span>📨</span><span class="sp">
-      ${t.statoUff==="annullato" ? "<b>Annullato dall'ufficio.</b> Se non si è lavorato, elimina il turno."
+      ${t.statoUff==="annullato" ? "<b>Annullato dall'ufficio.</b> Se non si è lavorato, lascialo vuoto."
         /* La segnalazione "cambiato dall'ufficio" e' spenta per ora, su
            richiesta: il turno modificato si comporta come gli altri e mostra
            solo l'orario previsto. Il gestionale continua a riconoscere le
            modifiche, quindi per riaccenderla basta rimettere qui il ramo
            t.statoUff === "modificato", e in vistaGiorno il cartellino. */
-        : `Turno dell'ufficio · previsto ${esc(orario(t.prev||{}))}`}
-      ${t.prev && !stessoOrario(t, t.prev) ? "<br>Gli orari qui sotto sono quelli che hai corretto tu: restano." : ""}
+        : `Turno dell'ufficio · previsto <b>${esc(orario(t.prev||t))}</b> · ${hm(minUfficio(t)||minParte(t.dalle,t.alle,t.dalle2,t.alle2))}`}
     </span></div>` : ""}
-    <div class="totbox"><span>Totale ore giornata</span><b id="tTot">0:00</b></div>
-    <div class="btns" style="margin-top:14px">${nuovo?"":`<button class="btn dan" data-act="eliminaT" data-id="${t.id}">Elimina</button>`}<button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaT" data-id="${nuovo?"":t.id}">Salva</button></div>`);
+
+    <div class="totbox"><span>Totale giornata</span><b id="tTot">0:00</b></div>
+    <div id="tAvviso" style="display:none"></div>
+
+    <div class="btns" style="margin-top:14px"><button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaT" data-id="${t.id}">Salva</button></div>`);
+  foglioTurno.turno = t;
+  sincronizzaInsieme();
   aggiornaTotTurno();
 }
+
 function leggiTurno(){
   const doppio = document.getElementById("tDoppio").checked;
-  return { data:val("tData"), risorsaId:val("tRis"), servizioId:val("tSer"), dalle:val("tDa"), alle:val("tA"),
-    dalle2: doppio?val("tDa2"):"", alle2: doppio?val("tA2"):"", note:val("tNote") };
+  const inDue = document.getElementById("tInDue").checked;
+  const insieme = inDue && document.getElementById("tInsieme").checked;
+  const doppioB = document.getElementById("tBDoppio").checked;
+  // "Insieme" vuol dire stessi orari: si ricopiano da soli, cosi' non li
+  // riscrive due volte e non puo' sbagliarne uno
+  const bDa = insieme ? val("tDa") : val("tBDa");
+  const bA  = insieme ? val("tA")  : val("tBA");
+  const bDa2 = insieme ? (doppio?val("tDa2"):"") : (doppioB?val("tBDa2"):"");
+  const bA2  = insieme ? (doppio?val("tA2"):"")  : (doppioB?val("tBA2"):"");
+  return {
+    risorsaId:val("tRis"), dalle:val("tDa"), alle:val("tA"),
+    dalle2: doppio?val("tDa2"):"", alle2: doppio?val("tA2"):"",
+    risorsaB: inDue?val("tRisB"):"", bDalle: inDue?bDa:"", bAlle: inDue?bA:"",
+    bDalle2: inDue?bDa2:"", bAlle2: inDue?bA2:"",
+    insieme: insieme ? 1 : 0,
+    note:val("tNote"),
+  };
 }
+
+/**
+ * "Lavorano insieme": gli orari del secondo diventano quelli del primo e si
+ * bloccano. Scriverli due volte uguali e' solo un modo per sbagliarne uno.
+ */
+function sincronizzaInsieme(){
+  const ins = document.getElementById("tInsieme");
+  if(!ins) return;
+  const campi = [["tBDa","tDa"],["tBA","tA"],["tBDa2","tDa2"],["tBA2","tA2"]];
+  for(const [b,a] of campi){
+    const eb = document.getElementById(b), ea = document.getElementById(a);
+    if(!eb || !ea) continue;
+    if(ins.checked){ eb.value = ea.value; eb.readOnly = true; eb.style.opacity = .6; }
+    else { eb.readOnly = false; eb.style.opacity = 1; }
+  }
+  const box = document.getElementById("tBDoppio");
+  if(box && ins.checked){
+    box.checked = document.getElementById("tDoppio").checked;
+    document.getElementById("boxBDoppio").style.display = box.checked?"grid":"none";
+  }
+}
+
+/** Il conto in fondo alla scheda: quanto fanno i suoi contro quanto da' l'ufficio */
 function aggiornaTotTurno(){
-  document.getElementById("tTot").textContent = hm(minTurno(leggiTurno()));
+  const letto = leggiTurno(), t = foglioTurno.turno || {};
+  const fatte = minTurno(letto);
+  const uff = minUfficio(t);
+  const box = document.getElementById("tTot");
+  if(box) box.textContent = hm(fatte);
+  const av = document.getElementById("tAvviso");
+  if(!av) return;
+  if(!uff){ av.style.display = "none"; return; }
+  const diff = fatte - uff;
+  av.style.display = "block";
+  if(diff > 0){
+    av.className = "avviso";
+    av.innerHTML = `Sforano di <b>${hm(diff)}</b>: l'ufficio ne dà ${hm(uff)}, qui ce ne sono ${hm(fatte)}.`;
+  } else {
+    av.className = "muted";
+    av.style.padding = "6px 2px";
+    av.innerHTML = diff === 0
+      ? `✓ Tornano con le ${hm(uff)} dell'ufficio.`
+      : `L'ufficio ne dà ${hm(uff)}: ne restano <b>${hm(-diff)}</b> da coprire.`;
+  }
 }
 
 /*
@@ -735,20 +858,10 @@ function foglioRisorsa(r){
     <div class="btns" style="margin-top:14px">${nuovo?"":`<button class="btn dan" data-act="eliminaR" data-id="${r.id}">Elimina</button>`}<button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaR" data-id="${nuovo?"":r.id}">Salva</button></div>`);
   setTimeout(()=>document.getElementById("rNome").focus(),50);
 }
-function foglioServizio(s){
-  const nuovo=!s; s = s || { nome:"", indirizzo:"", dalle:"", alle:"", dalle2:"", alle2:"", orePreviste:"", nascosto:false };
-  apriFoglio(`<h2>${nuovo?"Nuovo servizio":"Modifica servizio"}</h2>
-    <label class="f">Nome / luogo</label><input class="i" id="sNome" value="${esc(s.nome)}" placeholder="Es. Douglas Milano Indipendenza">
-    <label class="f">Indirizzo (facoltativo)</label><input class="i" id="sInd" value="${esc(s.indirizzo||"")}">
-    <label class="f">Orario tipico (si compila da solo nei turni)</label>
-    <div class="due"><input class="i" type="time" id="sDa" value="${s.dalle||""}"><input class="i" type="time" id="sA" value="${s.alle||""}"></div>
-    <label class="f">Secondo turno tipico (facoltativo)</label>
-    <div class="due"><input class="i" type="time" id="sDa2" value="${s.dalle2||""}"><input class="i" type="time" id="sA2" value="${s.alle2||""}"></div>
-    <label class="f">Ore previste nel mese (facoltativo, per il confronto)</label><input class="i" id="sPrev" type="number" inputmode="decimal" step="0.5" min="0" value="${s.orePreviste||""}">
-    ${nuovo?"":`<label class="check"><input type="checkbox" id="sNasc" ${s.nascosto?"checked":""}> Nascondi (servizio finito: resta nei mesi passati)</label>`}
-    <div class="btns" style="margin-top:14px">${nuovo?"":`<button class="btn dan" data-act="eliminaS" data-id="${s.id}">Elimina</button>`}<button class="btn" data-act="chiudi">Annulla</button><button class="btn pri" data-act="salvaS" data-id="${nuovo?"":s.id}">Salva</button></div>`);
-  setTimeout(()=>document.getElementById("sNome").focus(),50);
-}
+/*
+ * Qui stava la scheda del servizio. Tolta con i comandi che la aprivano: i
+ * posti dove si lavora arrivano dall'ufficio insieme ai turni.
+ */
 
 /* ---------- file: Excel ---------- */
 async function consegnaFile(nome, contenuto, tipo){
@@ -774,15 +887,22 @@ function csvMese(){
   if(!lista.length){ toast(`Nessun turno in ${nomeMese(m)}`); return; }
   const c = v => { const s=String(v??""); return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
   // Totale del giorno per persona, ripetuto su ogni riga di quel giorno
-  const totGiorno = {}; for(const t of lista){ const k=t.risorsaId+"|"+t.data; totGiorno[k]=(totGiorno[k]||0)+minTurno(t); }
-  const righe = [["Capogruppo","Data","Giorno","Operatore","Servizio","Indirizzo","Dalle","Alle","Dalle 2","Alle 2","Ore turno","Ore turno (decimali)","Tot giorno operatore","Note"]];
-  for(const t of lista){
-    righe.push([db.imp.nome, t.data.split("-").reverse().join("/"), GIORNI[daIso(t.data).getDay()], nomeR(t.risorsaId), nomeS(t.servizioId), servizio(t.servizioId)?.indirizzo||"",
-      t.dalle, t.alle, t.dalle2||"", t.alle2||"", hm(minTurno(t)), decimali(minTurno(t)), hm(totGiorno[t.risorsaId+"|"+t.data]), t.note||""]);
+  // Una riga per PERSONA: se in un turno sono in due, escono due righe, cosi'
+  // le ore di ciascuno si contano per quello che sono
+  const righeP = [];
+  for(const t of lista) for(const p of parti(t)) if(p.min || p.risorsaId) righeP.push({ t, p });
+  const totGiorno = {}; for(const {t,p} of righeP){ const k=p.risorsaId+"|"+t.data; totGiorno[k]=(totGiorno[k]||0)+p.min; }
+  const righe = [["Capogruppo","Data","Giorno","Operatore","Servizio","Indirizzo","Dalle","Alle","Dalle 2","Alle 2","Ore turno","Ore turno (decimali)","Tot giorno operatore","In due","Note"]];
+  for(const {t,p} of righeP){
+    const [da,a] = p.secondo ? [t.bDalle,t.bAlle] : [t.dalle,t.alle];
+    const [da2,a2] = p.secondo ? [t.bDalle2||"",t.bAlle2||""] : [t.dalle2||"",t.alle2||""];
+    righe.push([db.imp.nome, t.data.split("-").reverse().join("/"), GIORNI[daIso(t.data).getDay()], nomeR(p.risorsaId), nomeS(t.servizioId), servizio(t.servizioId)?.indirizzo||"",
+      da, a, da2, a2, hm(p.min), decimali(p.min), hm(totGiorno[p.risorsaId+"|"+t.data]),
+      t.risorsaB ? (t.insieme ? "insieme" : "divisi") : "", t.note||""]);
   }
   // Totali del mese per operatore in fondo
   righe.push([]); righe.push(["","","","TOTALI DEL MESE","","","","","","","Ore","Ore (decimali)"]);
-  const per={}; for(const t of lista) per[t.risorsaId]=(per[t.risorsaId]||0)+minTurno(t);
+  const per={}; for(const {p} of righeP) per[p.risorsaId]=(per[p.risorsaId]||0)+p.min;
   Object.keys(per).sort((a,b)=>nomeR(a).localeCompare(nomeR(b))).forEach(id=>righe.push(["","","",nomeR(id),"","","","","","",hm(per[id]),decimali(per[id])]));
   const testo = "﻿" + righe.map(r=>r.map(c).join(";")).join("\r\n");
   consegnaFile(`ore-squadra-${m}${db.imp.nome?"-"+db.imp.nome.replace(/[^\w]+/g,"_"):""}.csv`, testo, "text/csv");
@@ -803,21 +923,26 @@ document.addEventListener("click", e => {
     case "modifica": foglioTurno(db.turni.find(t=>t.id===id)); break;
     case "salvaT": {
       const t = leggiTurno();
-      if(!t.data||!t.risorsaId||!t.servizioId||!t.dalle||!t.alle){ toast("Compila giorno, persona, servizio, dalle e alle"); return; }
+      const v = db.turni.find(x=>x.id===id);
+      if(!v){ toast("Turno non trovato"); return; }
+      if(!t.risorsaId||!t.dalle||!t.alle){ toast("Scegli chi va a lavorare e metti dalle e alle"); return; }
       if(t.dalle===t.alle){ toast("Dalle e Alle sono uguali"); return; }
-      if((t.dalle2&&!t.alle2)||(!t.dalle2&&t.alle2)){ toast("Secondo turno: servono sia Dalle 2 che Alle 2"); return; }
-      if(id){
-        const v = db.turni.find(x=>x.id===id);
-        Object.assign(v, t);
-        // Aprendolo e salvandolo se n'e' preso carico: il nome adesso e' suo
-        delete v.uff;
-        // Se l'ufficio aveva segnalato una modifica, aprendolo e salvando
-        // l'ha vista: il segno si toglie. L'annullato invece resta finche'
-        // non elimina il turno.
-        if(v.statoUff === "modificato") v.statoUff = "";
-      } else { db.turni.push({ id:uid(), ...t }); }
-      salva(); chiudiFoglio(); stato.giorno = t.data; stato.mese = t.data.slice(0,7); render(); toast("Turno salvato"); break; }
-    case "eliminaT": if(confirm("Elimino questo turno?")){ db.turni = db.turni.filter(t=>t.id!==id); salva(); chiudiFoglio(); render(); } break;
+      if((t.dalle2&&!t.alle2)||(!t.dalle2&&t.alle2)){ toast("Secondo orario: servono sia Dalle 2 che Alle 2"); return; }
+      if(t.risorsaB){
+        if(!t.bDalle||!t.bAlle){ toast("Secondo operatore: metti dalle e alle"); return; }
+        if(t.risorsaB===t.risorsaId){ toast("Il secondo operatore è la stessa persona"); return; }
+      } else if(t.bDalle||t.bAlle){ toast("Hai messo gli orari del secondo ma non il nome"); return; }
+      // Il monte ore e' quello che si paga: sforarlo si puo', ma consapevolmente
+      const uff = minUfficio(v), fatte = minTurno(t);
+      if(uff && fatte > uff &&
+         !confirm(`Le ore sforano quelle dell'ufficio: ${hm(fatte)} invece di ${hm(uff)}.\nSalvo lo stesso?`)) return;
+      Object.assign(v, t);
+      // Aprendolo e salvandolo se n'e' preso carico: il nome adesso e' suo
+      delete v.uff;
+      // Se l'ufficio aveva segnalato una modifica, aprendolo e salvando
+      // l'ha vista: il segno si toglie. L'annullato invece resta.
+      if(v.statoUff === "modificato") v.statoUff = "";
+      salva(); chiudiFoglio(); render(); toast("Turno salvato"); break; }
     case "salvaParola": {
       const p = val("pwAgg");
       if(p.length < 6){ toast("La parola d'ordine è di almeno 6 caratteri"); return; }
@@ -849,18 +974,12 @@ document.addEventListener("click", e => {
       const n = db.turni.filter(t=>t.risorsaId===id).length;
       if(n){ alert(`Non si può eliminare: ha ${n} turni registrati.\nSpunta "Nascondi" se non lavora più con te.`); return; }
       if(confirm("Elimino questa risorsa?")){ db.risorse = db.risorse.filter(r=>r.id!==id); salva(); chiudiFoglio(); render(); } break; }
-    case "nuovoS": foglioServizio(null); break;
-    case "modS": foglioServizio(servizio(id)); break;
-    case "salvaS": {
-      const nome = val("sNome"); if(!nome){ toast("Scrivi il nome del servizio"); return; }
-      const dati = { nome, indirizzo:val("sInd"), dalle:val("sDa"), alle:val("sA"), dalle2:val("sDa2"), alle2:val("sA2"),
-        orePreviste: parseFloat(val("sPrev").replace(",", "."))||"", nascosto: !!document.getElementById("sNasc")?.checked };
-      if(id) Object.assign(servizio(id), dati); else db.servizi.push({ id:uid(), ...dati });
-      salva(); chiudiFoglio(); render(); break; }
-    case "eliminaS": {
-      const n = db.turni.filter(t=>t.servizioId===id).length;
-      if(n){ alert(`Non si può eliminare: ha ${n} turni registrati.\nSpunta "Nascondi" se il servizio è finito.`); return; }
-      if(confirm("Elimino questo servizio?")){ db.servizi = db.servizi.filter(s=>s.id!==id); salva(); chiudiFoglio(); render(); } break; }
+    /*
+     * Qui stavano "nuovo servizio", "modifica" ed "elimina". Tolti: i posti
+     * dove si lavora li decide l'ufficio e arrivano con i turni. Uno creato a
+     * mano qui dentro non esisterebbe per nessun altro, e le ore finirebbero
+     * su una riga che il gestionale non conosce.
+     */
     case "csv": csvMese(); break;
     case "stampa": document.querySelectorAll("details").forEach(d=>d.open=true); setTimeout(()=>window.print(),100); break;
     case "cancellatutto":
@@ -875,17 +994,12 @@ document.addEventListener("change", e => {
   if(a==="sceglidata" && el.value){ stato.giorno = el.value; render(); }
   if(a==="sceglimese" && el.value){ stato.mese = el.value; render(); }
   if(a==="nome"){ db.imp.nome = el.value.trim(); salva(); document.getElementById("chi").textContent = db.imp.nome?`Capogruppo: ${db.imp.nome}`:""; toast("Nome salvato"); }
-  // Scegliendo il servizio l'orario tipico si compila da solo
-  if(el.id==="tSer"){
-    const s = servizio(el.value);
-    if(s && s.dalle && s.alle){
-      document.getElementById("tDa").value = s.dalle; document.getElementById("tA").value = s.alle;
-      const d = !!(s.dalle2&&s.alle2);
-      document.getElementById("tDoppio").checked = d; document.getElementById("boxDoppio").style.display = d?"grid":"none";
-      document.getElementById("tDa2").value = s.dalle2||""; document.getElementById("tA2").value = s.alle2||"";
-    }
-  }
   if(el.id==="tDoppio"){ document.getElementById("boxDoppio").style.display = el.checked?"grid":"none"; }
+  if(el.id==="tBDoppio"){ document.getElementById("boxBDoppio").style.display = el.checked?"grid":"none"; }
+  if(el.id==="tInDue"){ document.getElementById("boxB").style.display = el.checked?"block":"none"; }
+  // "Insieme": gli orari del secondo sono quelli del primo, e non si toccano
+  if(el.id==="tInsieme" || (el.id==="tInDue" && el.checked)) sincronizzaInsieme();
+  if((el.id==="tDa"||el.id==="tA"||el.id==="tDa2"||el.id==="tA2") && document.getElementById("tInsieme")?.checked) sincronizzaInsieme();
   if(el.closest("#foglio") && document.getElementById("tTot")) aggiornaTotTurno();
 });
 document.addEventListener("input", e => {
