@@ -827,12 +827,31 @@ function aggiornaTotTurno(){
   if(box) box.textContent = hm(fatte);
   const av = document.getElementById("tAvviso");
   if(!av) return;
-  if(!uff){ av.style.display = "none"; return; }
+  /*
+   * Finche' sforano, Salva e' spento e gli orari diventano rossi mentre li
+   * scrive: lo sbaglio si vede sul campo che lo ha causato, non solo in una
+   * riga in fondo alla scheda.
+   */
+  const salva = document.querySelector('#foglio [data-act="salvaT"]');
+  const ORARI = ["tDa","tA","tDa2","tA2","tBDa","tBA","tBDa2","tBA2"];
+  const blocca = (si) => {
+    if(salva){ salva.disabled = si; salva.style.opacity = si ? .45 : 1; }
+    for(const x of ORARI){
+      const e = document.getElementById(x);
+      if(!e) continue;
+      e.style.borderColor = si ? "#b03a48" : "";
+      e.style.background = si ? "#fdeaec" : "";
+    }
+    const tot = document.getElementById("tTot");
+    if(tot) tot.style.color = si ? "#b03a48" : "";
+  };
+  if(!uff){ av.style.display = "none"; blocca(false); return; }
   const diff = fatte - uff;
   av.style.display = "block";
+  blocca(diff > 0);
   if(diff > 0){
     av.className = "avviso";
-    av.innerHTML = `Sforano di <b>${hm(diff)}</b>: l'ufficio ne dà ${hm(uff)}, qui ce ne sono ${hm(fatte)}.`;
+    av.innerHTML = `Sforano di <b>${hm(diff)}</b>: l'ufficio ne dà ${hm(uff)}, qui ce ne sono ${hm(fatte)}. <b>Così non si salva.</b>`;
   } else {
     av.className = "muted";
     av.style.padding = "6px 2px";
@@ -932,10 +951,16 @@ document.addEventListener("click", e => {
         if(!t.bDalle||!t.bAlle){ toast("Secondo operatore: metti dalle e alle"); return; }
         if(t.risorsaB===t.risorsaId){ toast("Il secondo operatore è la stessa persona"); return; }
       } else if(t.bDalle||t.bAlle){ toast("Hai messo gli orari del secondo ma non il nome"); return; }
-      // Il monte ore e' quello che si paga: sforarlo si puo', ma consapevolmente
+      /*
+       * Il monte ore dell'ufficio e' un tetto, non un consiglio: quello e'
+       * quello che si paga. Sforarlo non si salva — niente "salvo lo stesso",
+       * perche' una domanda a cui si risponde di corsa non e' un controllo.
+       */
       const uff = minUfficio(v), fatte = minTurno(t);
-      if(uff && fatte > uff &&
-         !confirm(`Le ore sforano quelle dell'ufficio: ${hm(fatte)} invece di ${hm(uff)}.\nSalvo lo stesso?`)) return;
+      if(uff && fatte > uff){
+        toast(`Non salvo: ${hm(fatte)} contro le ${hm(uff)} dell'ufficio. Togli ${hm(fatte-uff)}.`);
+        return;
+      }
       Object.assign(v, t);
       // Aprendolo e salvandolo se n'e' preso carico: il nome adesso e' suo
       delete v.uff;
