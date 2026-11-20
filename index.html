@@ -272,6 +272,26 @@ function trovaPacco(testo){
 }
 
 /**
+ * Pesca il codice dell'ufficio da un link o da un messaggio incollato.
+ *
+ * Serve soprattutto all'iPhone. Il codice viaggia dopo il cancelletto, e
+ * l'icona salvata sulla schermata Home a volte si porta via solo la prima
+ * parte del link: l'app si apre senza sapere di chi e', e resta vuota. Potendo
+ * incollare il link qui dentro, il codice finisce dove sarebbe finito da solo
+ * e la cosa si chiude in un colpo, qualunque cosa faccia il telefono.
+ *
+ * Si accetta anche il codice scritto da solo, come viene dettato al telefono:
+ * sei lettere dell'alfabeto dell'ufficio, quello senza O/0 ne' I/1/L.
+ */
+function trovaCodice(testo){
+  const t = String(testo||"");
+  const m = t.match(/#c=([A-Za-z0-9_-]{4,20})/);
+  if(m) return m[1];
+  const solo = t.trim().toUpperCase();
+  return /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(solo) ? solo : null;
+}
+
+/**
  * Un turno sta dentro quello che l'ufficio ha mandato?
  * I pacchetti vecchi non hanno la data finale: allora vale "dal giorno X in
  * poi", come prima.
@@ -494,7 +514,9 @@ function vistaGiorno(){
   if(!db.turni.length){
     return `<div class="card vuoto"><div style="font-size:34px">👋</div>
       <p><b>Benvenuto!</b><br>I turni arrivano dall'ufficio e compaiono qui da soli.<br>
-      Se non vedi niente, vai in <b>Altro</b> e tocca «Controlla adesso».</p>
+      ${db.imp.codice
+        ? `Se non vedi niente, vai in <b>Altro</b> e tocca «Controlla adesso».`
+        : `Vai in <b>Altro</b> e incolla il <b>link</b> che ti ha mandato l'ufficio.`}</p>
       <button class="btn pri" data-act="vista" data-v="altro">Vai in Altro</button></div>`;
   }
   const g = stato.giorno, lista = turniDel(g);
@@ -664,10 +686,10 @@ function vistaAltro(){
       <input class="i" id="nomeCapo" value="${esc(db.imp.nome)}" placeholder="Es. Ibrahim ..." data-act-change="nome"></div>
     ${cardAggiornamento()}
     <div class="card"><b>📨 Turni dall'ufficio</b><p class="muted" style="margin:4px 0 10px">
-      Di solito basta <b>aprire il link</b> che ti manda l'ufficio su WhatsApp. Se il link non si apre, incolla qui il messaggio.
+      Di solito basta <b>aprire il link</b> che ti manda l'ufficio su WhatsApp. Se il link non si apre, o se l'app si è aperta vuota, <b>incolla qui il link</b> — va bene anche solo il codice di sei lettere.
       ${db.imp.ultimoImport ? `<br>Ultimo caricamento: <b>${new Date(db.imp.ultimoImport.quando).toLocaleString("it-IT")}</b> (${db.imp.ultimoImport.turni} turni dal ${db.imp.ultimoImport.dal.split("-").reverse().join("/")}).` : ""}</p>
-      <textarea class="i" id="incolla" rows="3" placeholder="Incolla qui tutto il messaggio" style="font-family:monospace;font-size:12px"></textarea>
-      <button class="btn full" data-act="leggiIncollato" style="margin-top:8px">Leggi il messaggio</button></div>
+      <textarea class="i" id="incolla" rows="3" placeholder="Incolla qui il link, il messaggio, o il codice" style="font-family:monospace;font-size:12px"></textarea>
+      <button class="btn full" data-act="leggiIncollato" style="margin-top:8px">Leggi</button></div>
     <div class="card"><b>📄 Esporta il mese</b><p class="muted" style="margin:4px 0 10px">File Excel (CSV) con una riga per turno: data, operatore, servizio, orari, ore. Il mese è quello scelto in Mese/Riepilogo: <b style="text-transform:capitalize">${nomeMese(stato.mese)}</b>.</p>
       <button class="btn full" data-act="csv">Esporta ${nomeMese(stato.mese)}</button></div>
     <div class="card"><b>Dati sul telefono</b><p class="muted" style="margin:4px 0 10px">${db.risorse.length} risorse · ${db.servizi.length} servizi · ${db.turni.length} turni</p>
@@ -685,7 +707,8 @@ function vistaAltro(){
 function cardAggiornamento(){
   if(!db.imp.codice){
     return `<div class="card"><b>🔄 Aggiornamento automatico</b>
-      <p class="muted" style="margin:4px 0 0">Non ancora attivo. Quando l'ufficio ti manda il <b>link</b>, aprilo una volta: da li' in poi i turni arrivano da soli, senza altri messaggi.</p></div>`;
+      <p class="muted" style="margin:4px 0 0">Non ancora attivo. Quando l'ufficio ti manda il <b>link</b>, aprilo una volta: da lì in poi i turni arrivano da soli, senza altri messaggi.<br>
+      Se l'app si è aperta vuota, incolla il link qui sotto in <b>Turni dall'ufficio</b>: è la stessa cosa.</p></div>`;
   }
   const q = db.imp.quandoAgg ? new Date(db.imp.quandoAgg) : null;
   const min = q ? Math.floor((Date.now()-q.getTime())/60000) : null;
@@ -976,8 +999,19 @@ document.addEventListener("click", e => {
     case "aggiornaOra": controllaAggiornamenti(true); break;
     case "cambiaParola": foglioParola(false); break;
     case "leggiIncollato": {
-      const pacco = trovaPacco(val("incolla"));
-      if(!pacco){ toast("Nel testo non trovo i turni: incolla tutto il messaggio"); return; }
+      const testo = val("incolla");
+      // Prima si cerca il codice: e' la strada di adesso, i turni dentro il
+      // link sono quella vecchia. Da qui si fa esattamente quello che
+      // succederebbe aprendo il link: codice, parola, e poi si scarica.
+      const codice = trovaCodice(testo);
+      if(codice){
+        if(db.imp.codice !== codice){ db.imp.codice = codice; db.imp.tsAgg = ""; salva(); }
+        render();
+        if(!db.imp.parola) foglioParola(); else controllaAggiornamenti(true);
+        break;
+      }
+      const pacco = trovaPacco(testo);
+      if(!pacco){ toast("Qui non trovo né il codice né i turni: incolla tutto il messaggio dell'ufficio"); return; }
       caricaPacco(pacco); break; }
     case "faiImport": {
       if(!paccoInAttesa){ toast("Niente da importare"); return; }
