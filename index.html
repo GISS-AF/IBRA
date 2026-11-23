@@ -655,12 +655,12 @@ function giorniServizio(ts){
     tot += totG;
     ps.forEach((p,i)=>{
       righe += `<tr>${i===0?`<td rowspan="${ps.length}"${d.getDay()===0?` style="color:#b03a48"`:""}><b>${d.getDate()}</b> ${GG[d.getDay()]}</td>`:""}
-        <td class="r">${esc(p.orario).replace(" + ","<br>")}</td>
-        <td>${esc(nomeR(p.risorsaId))}</td>
+        <td class="r" style="padding-right:18px">${esc(p.orario).replace(" + ","<br>")}</td>
+        <td style="padding-left:6px">${esc(nomeR(p.risorsaId))}</td>
         <td class="r num">${hm(p.min)}</td></tr>`;
     });
   }
-  return `<table class="t" style="margin-top:8px"><tr><th>Giorno</th><th class="r">Dalle · alle</th><th>Operatore</th><th class="r">Ore</th></tr>${righe}
+  return `<table class="t" style="margin-top:8px"><tr><th>Giorno</th><th class="r" style="padding-right:18px">Dalle · alle</th><th style="padding-left:6px">Operatore</th><th class="r">Ore</th></tr>${righe}
     <tr class="tot"><td colspan="3">Totale ${date.length} giorn${date.length===1?"o":"i"}</td><td class="r">${hm(tot)}</td></tr></table>`;
 }
 function riepServizi(lista){
