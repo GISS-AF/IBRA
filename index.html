@@ -636,6 +636,33 @@ function riepOperatori(lista){
   const totale = lista.reduce((s,t)=>s+minTurno(t),0);
   return h + `<div class="card riga"><b class="sp">Totale squadra</b><span class="big" style="font-size:22px">${hm(totale)}</span></div>`;
 }
+/**
+ * Il mese di un servizio, giorno per giorno.
+ *
+ * Una riga per PERSONA, non per turno: se in un giorno ci sono due operatori
+ * — quello dell'ufficio e il secondo messo dal capogruppo — escono due righe
+ * sotto la stessa data, ognuna con le sue ore. E' il foglio che si porta al
+ * cliente: "il 27 c'erano due uomini, dalle 10 alle 23".
+ */
+function giorniServizio(ts){
+  const giorni = {};
+  for(const t of ts) for(const p of parti(t)){ if(p.min || p.risorsaId) (giorni[t.data] ||= []).push(p); }
+  const date = Object.keys(giorni).sort();
+  if(!date.length) return "";
+  let righe = "", tot = 0;
+  for(const g of date){
+    const ps = giorni[g], d = daIso(g), totG = ps.reduce((s,p)=>s+p.min,0);
+    tot += totG;
+    ps.forEach((p,i)=>{
+      righe += `<tr>${i===0?`<td rowspan="${ps.length}"${d.getDay()===0?` style="color:#b03a48"`:""}><b>${d.getDate()}</b> ${GG[d.getDay()]}</td>`:""}
+        <td class="r">${esc(p.orario).replace(" + ","<br>")}</td>
+        <td>${esc(nomeR(p.risorsaId))}</td>
+        <td class="r num">${hm(p.min)}</td></tr>`;
+    });
+  }
+  return `<table class="t" style="margin-top:8px"><tr><th>Giorno</th><th class="r">Dalle · alle</th><th>Operatore</th><th class="r">Ore</th></tr>${righe}
+    <tr class="tot"><td colspan="3">Totale ${date.length} giorn${date.length===1?"o":"i"}</td><td class="r">${hm(tot)}</td></tr></table>`;
+}
 function riepServizi(lista){
   const per = {};
   for(const t of lista){ (per[t.servizioId] ||= []).push(t); }
@@ -653,7 +680,8 @@ function riepServizi(lista){
     h += `<details class="card"><summary class="riga"><span class="chev">▶</span><span style="width:10px;height:10px;border-radius:50%;background:${coloreS(id)}"></span>
         <div class="sp"><div style="font-weight:700">${esc(nomeS(id))}</div>${s?.indirizzo?`<div class="muted">${esc(s.indirizzo)}</div>`:""}${prev}</div>
         <div class="big" style="font-size:22px">${hm(tot)}</div></summary>
-      <table class="t" style="margin-top:8px"><tr><th>Operatore</th><th class="r">Ore</th></tr>
+      ${giorniServizio(ts)}
+      <table class="t" style="margin-top:12px"><tr><th>Operatore</th><th class="r">Ore</th></tr>
       ${Object.keys(perOp).sort((a,b)=>nomeR(a).localeCompare(nomeR(b))).map(o=>`<tr><td>${esc(nomeR(o))}</td><td class="r num">${hm(perOp[o])}</td></tr>`).join("")}
       <tr class="tot"><td>Totale</td><td class="r">${hm(tot)}</td></tr></table></details>`;
   }
