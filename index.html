@@ -457,7 +457,18 @@ function applicaImport(dati){
     if(t.statoUff !== "annullato"){ t.statoUff = "annullato"; esito.annullati++; }
   }
 
-  if(!db.imp.nome && dati.capo) db.imp.nome = dati.capo;
+  /*
+   * Il nome in cima.
+   *
+   * Lo porta il pacchetto, ma se uno se l'e' scritto a modo suo non glielo si
+   * cambia sotto il naso. Si rifa' solo quando il pacchetto viene da un'altra
+   * parte — per esempio un telefono che prima leggeva la squadra di un capo e
+   * adesso legge quella dell'ufficio: li' il nome di prima sarebbe falso.
+   */
+  if(dati.capo && dati.capo !== db.imp.capoPacco){
+    if(!db.imp.nome || db.imp.nome === db.imp.capoPacco) db.imp.nome = dati.capo;
+    db.imp.capoPacco = dati.capo;
+  }
   // Chi e' il capogruppo fra le risorse, cosi' si sa qual e' il suo nome
   if(dati.capoId && perOp[dati.capoId]) db.imp.capoRisorsa = perOp[dati.capoId];
   db.imp.ultimoImport = { quando:new Date().toISOString(), dal:dati.dal, turni:(dati.turni||[]).length };
