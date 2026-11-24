@@ -802,10 +802,13 @@ function vistaBalance(){
     </div>
     <p class="muted no-stampa" style="margin:8px 0 0">Per mandarlo: fai l'Excel o il PDF e scegli <b>Mail</b> nella finestra che si apre.</p>` : "";
 
+  // "Riepilogo di novembre 2026": la maiuscola la mette il nome del mese, non
+  // il foglio di stile — se no veniva fuori "Riepilogo Di Novembre"
   const nomeM = `${MESI[mm-1]} ${anno}`;
+  const NomeM = MESI[mm-1].charAt(0).toUpperCase() + MESI[mm-1].slice(1) + ` ${anno}`;
   return `<div class="card non-sic">
       <div class="riga">
-        <div class="sp muted" style="text-transform:capitalize">${nomeM} · ${scelto.gruppi.length} gruppi · ${t.n} turni · ${hm2(t.ore)} ore</div>
+        <div class="sp muted">${NomeM} · ${scelto.gruppi.length} gruppi · ${t.n} turni · ${hm2(t.ore)} ore</div>
         ${scelto.futuro ? `<span class="pill" style="background:var(--sfondo);color:var(--grigio)">da fare</span>`
           : corrente ? `<span class="pill" style="background:#e6f2ec;color:#1d6a4f">in corso</span>` : ""}
       </div>
@@ -826,7 +829,7 @@ function vistaBalance(){
       </div>
     </div>
     <div class="card non-sic">
-      <b style="font-size:14px;text-transform:capitalize">Riepilogo di ${nomeM}</b>
+      <b style="font-size:14px">Riepilogo di ${nomeM}</b>
       <p class="muted" style="margin:3px 0 4px">Gli stessi conti della Chiusura mese, extra compresi.</p>
       ${righe || `<div class="muted">Questo mese non c'è ancora niente.</div>`}
       <div class="riga" style="border-top:2px solid var(--verde);margin-top:8px;padding-top:8px">
@@ -834,7 +837,7 @@ function vistaBalance(){
         <span style="font-weight:700;color:${t.pct >= 30 ? "#1d6a4f" : "#7a2430"}">${euro(t.margine)} · ${t.pct.toLocaleString("it-IT")}%</span></div>
     </div>
     ${sic.length ? `<details class="card" open><summary class="riga"><span class="chev">▶</span>
-      <div class="sp"><b style="font-size:14px;text-transform:capitalize">Dettaglio SICURITALIA · ${nomeM}</b>
+      <div class="sp"><b style="font-size:14px">Dettaglio SICURITALIA · ${NomeM}</b>
         <div class="muted">${sic.length} clienti · ${euro(totSic.fattura)}</div></div></summary>
       <div class="solo-stampa" style="margin-top:6px">${esc(db.imp.nome||"")}</div>${tabSic}</details>` : ""}
     <p class="muted non-sic" style="text-align:center">I conti arrivano dall'ufficio e qui si leggono soltanto.</p>`;
@@ -1127,6 +1130,112 @@ function csvSicuritalia(){
   consegnaFile(`sicuritalia-${mese.m}.csv`, testo, "text/csv");
 }
 
+/**
+ * Il PDF del dettaglio, scritto a mano.
+ *
+ * Prima qui c'era `window.print()`, e sul telefono non faceva niente:
+ * un'app salvata nella schermata Home non ha la stampa. Allora il foglio lo
+ * si costruisce qui dentro — un PDF e' testo, e una tabella non chiede altro
+ * che le due Helvetica che ogni lettore ha gia' — e lo si consegna come un
+ * file qualunque: da li' si manda per mail, su WhatsApp o si salva.
+ *
+ * Niente librerie: l'app deve aprirsi anche senza rete.
+ */
+function pdfSicuritalia(){
+  const s = db.conti;
+  if(!s){ toast("Qui non arrivano i conti"); return; }
+  const mese = s.mesi.find(x=>x.m===stato.meseBal) || s.mesi.find(x=>x.m===s.mese);
+  const righe = (mese && mese.sicuritalia) || [];
+  if(!righe.length){ toast("Questo mese non c'è il dettaglio"); return; }
+
+  const [anno,mm] = mese.m.split("-").map(Number);
+  const titolo = `Dettaglio SICURITALIA — ${MESI[mm-1]} ${anno}`;
+  const tot = righe.reduce((a,x)=>({ ore:a.ore+x.ore, costo:a.costo+x.costo, fattura:a.fattura+x.fattura }), {ore:0,costo:0,fattura:0});
+  const soldi = n => (Math.round((n||0)*100)/100).toLocaleString("it-IT", {minimumFractionDigits:2, maximumFractionDigits:2}) + " EUR";
+
+  // Il PDF parla latin-1: trattini lunghi, apici storti e puntini di mezzo
+  // diventano i loro parenti poveri, invece di un punto interrogativo
+  const pulisci = t => String(t??"")
+    .replace(/[—–]/g, "-").replace(/·/g, "-").replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/€/g, "EUR")
+    .normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .replace(/[^\x20-\x7e\xa0-\xff]/g, " ").replace(/[\\()]/g, c=>"\\"+c);
+
+  const A4 = { w:595, h:842 }, bordo = 42, perPagina = 34;
+  const colonne = [bordo, 330, 420, 520];   // cliente, ore, costo, fattura
+  const pagine = [];
+  for(let i=0; i<righe.length; i+=perPagina) pagine.push(righe.slice(i, i+perPagina));
+
+  const flussi = pagine.map((gruppo, n) => {
+    let y = A4.h - bordo, t = "";
+    const scrivi = (testo, x, grassetto, dim) =>
+      t += `BT /${grassetto?"F2":"F1"} ${dim||10} Tf ${x} ${y} Td (${pulisci(testo)}) Tj ET\n`;
+    const destra = (testo, x, grassetto, dim) => {
+      const largo = String(testo).length * (dim||10) * 0.5;
+      scrivi(testo, x - largo, grassetto, dim);
+    };
+
+    scrivi(titolo, bordo, true, 14); y -= 18;
+    scrivi(`${db.imp.nome || "Ufficio"} — ${righe.length} clienti`, bordo, false, 9); y -= 6;
+    t += `${bordo} ${y} m ${A4.w-bordo} ${y} l 0.6 w S\n`; y -= 16;
+
+    scrivi("CLIENTE", colonne[0], true, 9);
+    destra("ORE", colonne[1], true, 9); destra("COSTO", colonne[2], true, 9); destra("FATTURA", colonne[3], true, 9);
+    y -= 4;
+    t += `${bordo} ${y} m ${A4.w-bordo} ${y} l 0.4 w S\n`; y -= 14;
+
+    for(const r of gruppo){
+      scrivi(r.n.length > 46 ? r.n.slice(0,45)+"." : r.n, colonne[0], false, 10);
+      destra(hm2(r.ore), colonne[1], false, 10);
+      destra(soldi(r.costo), colonne[2], false, 10);
+      destra(soldi(r.fattura), colonne[3], false, 10);
+      y -= 15;
+    }
+
+    if(n === pagine.length - 1){
+      y -= 2;
+      t += `${bordo} ${y} m ${A4.w-bordo} ${y} l 0.8 w S\n`; y -= 15;
+      scrivi(`Totale ${righe.length} clienti`, colonne[0], true, 10);
+      destra(hm2(tot.ore), colonne[1], true, 10);
+      destra(soldi(tot.costo), colonne[2], true, 10);
+      destra(soldi(tot.fattura), colonne[3], true, 10);
+    }
+    y = 28;
+    scrivi(`Pagina ${n+1} di ${pagine.length} — stampato il ${new Date().toLocaleDateString("it-IT")}`, bordo, false, 8);
+    return t;
+  });
+
+  // ── Il file: oggetti, posizioni, coda ───────────────────────────────────
+  const oggetti = [];
+  oggetti[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  oggetti[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+  oggetti[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
+  const idPagine = [];
+  flussi.forEach((f, i) => {
+    const idP = 5 + i*2, idC = 6 + i*2;
+    idPagine.push(idP);
+    oggetti[idP] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4.w} ${A4.h}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${idC} 0 R >>`;
+    oggetti[idC] = `<< /Length ${f.length} >>\nstream\n${f}\nendstream`;
+  });
+  oggetti[2] = `<< /Type /Pages /Kids [${idPagine.map(i=>`${i} 0 R`).join(" ")}] /Count ${idPagine.length} >>`;
+
+  let fuori = "%PDF-1.4\n";
+  const dove = [];
+  for(let i=1; i<oggetti.length; i++){
+    if(!oggetti[i]) continue;
+    dove[i] = fuori.length;
+    fuori += `${i} 0 obj\n${oggetti[i]}\nendobj\n`;
+  }
+  const inizioTavola = fuori.length, quanti = oggetti.length;
+  fuori += `xref\n0 ${quanti}\n0000000000 65535 f \n`;
+  for(let i=1; i<quanti; i++)
+    fuori += `${String(dove[i] || 0).padStart(10,"0")} 00000 ${oggetti[i] ? "n" : "f"} \n`;
+  fuori += `trailer\n<< /Size ${quanti} /Root 1 0 R >>\nstartxref\n${inizioTavola}\n%%EOF`;
+
+  const byte = new Uint8Array(fuori.length);
+  for(let i=0; i<fuori.length; i++) byte[i] = fuori.charCodeAt(i) & 0xff;
+  consegnaFile(`sicuritalia-${mese.m}.pdf`, byte, "application/pdf");
+}
+
 function csvMese(){
   const m = stato.mese, lista = turniMese(m);
   if(!lista.length){ toast(`Nessun turno in ${nomeMese(m)}`); return; }
@@ -1250,11 +1359,7 @@ document.addEventListener("click", e => {
     // un file a un messaggio — ma la finestra che si apre ha dentro Mail, e
     // il file parte da li' con un tocco in piu'.
     case "csvSic": csvSicuritalia(); break;
-    case "pdfSic":
-      document.body.dataset.stampa = "sic";
-      document.querySelectorAll("details").forEach(d=>d.open=true);
-      setTimeout(()=>{ window.print(); delete document.body.dataset.stampa; }, 100);
-      break;
+    case "pdfSic": pdfSicuritalia(); break;
     case "stampa": document.querySelectorAll("details").forEach(d=>d.open=true); setTimeout(()=>window.print(),100); break;
     case "cancellatutto":
       if(confirm("Cancello TUTTI i dati da questo telefono?") && confirm("Sicuro? I turni l'ufficio li rimanda, ma i nomi che hai messo tu e gli orari che hai corretto si perdono.")){ db = vuoto(); salva(); render(); }
