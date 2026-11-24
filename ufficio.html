@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ufficio">
+<meta name="robots" content="noindex, nofollow">
+<title>Ufficio</title>
+<!--
+  L'app dell'ufficio.
+
+  Stessa macchina di Ore Squadra: il gestionale mette sul sito un file
+  cifrato, questa pagina lo scarica e lo apre con la parola d'ordine. Il file
+  e' pubblico come indirizzo ma illeggibile: senza la parola e' una sfilza di
+  lettere.
+
+  Qui non si tocca niente: si guarda e basta. Per correggere si entra nel
+  gestionale.
+
+  Due accortezze per iPhone:
+  - il codice viaggia dopo il cancelletto, e l'icona salvata sulla schermata
+    Home a volte se lo perde: c'e' la casella per incollare il link a mano.
+  - l'icona in Home ha una memoria separata da Safari, quindi la prima volta
+    chiede di nuovo la parola. E' normale, non e' un errore.
+-->
+<style>
+:root{
+  --verde:#0f6b4f; --scuro:#0b3b2d; --carta:#fff; --sfondo:#f2f1ec;
+  --bordo:#e4e2dc; --grigio:#6b6a64; --testo:#24231f;
+  --rosso:#7a2430; --rossoSf:#fbe9e7; --giallo:#8a6414; --gialloSf:#fdf0d5;
+  --okSf:#e6f2ec; --ok:#1d6a4f; --blu:#2a5d9f; --bluSf:#e8f0fa;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--sfondo);color:var(--testo);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+header{background:var(--verde);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 15px 12px;position:sticky;top:0;z-index:5}
+header .t{font-size:18px;font-weight:700}
+header .s{font-size:12px;opacity:.85;margin-top:2px}
+main{padding:12px;max-width:760px;margin:0 auto}
+.card{background:var(--carta);border:1px solid var(--bordo);border-radius:12px;padding:13px;margin-bottom:12px}
+.tit{font-size:12px;color:var(--grigio);margin:0 0 7px}
+.riga{display:flex;align-items:center;gap:9px}
+.sp{flex:1;min-width:0}
+.muted{color:var(--grigio);font-size:12.5px}
+.big{font-size:24px;font-weight:700}
+.num{display:flex;gap:8px}
+.num>div{flex:1;background:var(--sfondo);border-radius:9px;padding:8px 10px}
+.num .e{font-size:11px;color:var(--grigio)}
+.num .v{font-size:21px;font-weight:700}
+.pill{font-size:11px;padding:2px 8px;border-radius:5px;white-space:nowrap}
+.el{border-bottom:1px solid var(--bordo);padding:9px 0}
+.el:last-child{border-bottom:none}
+.nome{font-weight:600;font-size:14px}
+input,button{font:inherit}
+input[type=text],input[type=password]{width:100%;padding:10px;border:1px solid var(--bordo);border-radius:9px;background:#fff}
+.btn{padding:10px 14px;border:1px solid var(--bordo);border-radius:9px;background:#fff;font-size:14px;cursor:pointer}
+.btn.pri{background:var(--verde);border-color:var(--verde);color:#fff;font-weight:600}
+.btn.full{width:100%}
+.barra{height:6px;background:var(--sfondo);border-radius:3px;overflow:hidden;margin:7px 0 4px}
+.barra>div{height:100%;background:var(--verde)}
+.seg{display:flex;background:var(--sfondo);border-radius:9px;padding:3px;margin-bottom:12px;gap:3px}
+.seg button{flex:1;border:none;background:none;padding:7px 4px;border-radius:7px;font-size:13px;color:var(--grigio);cursor:pointer}
+.seg button.on{background:#fff;color:var(--testo);font-weight:600}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:var(--scuro);color:#fff;
+  padding:10px 16px;border-radius:10px;font-size:14px;display:none;z-index:9;max-width:90%}
+</style>
+</head>
+<body>
+<header>
+  <div class="t">Ufficio</div>
+  <div class="s" id="sotto">—</div>
+</header>
+<main id="app"></main>
+<div id="toast"></div>
+
+<script>
+/* ---------- dove si tiene la roba ---------- */
+const CHIAVE = "ufficioGiss.v1";
+const vuoto = () => ({ codice:"", parola:"", pacco:null, ts:"", quando:"" });
+function carica(){ try{ const s=localStorage.getItem(CHIAVE); return s ? {...vuoto(), ...JSON.parse(s)} : vuoto(); }catch(e){ return vuoto(); } }
+function salva(){ try{ localStorage.setItem(CHIAVE, JSON.stringify(db)); }catch(e){} }
+let db = carica();
+let vista = "oggi";
+
+/* ---------- utilita' ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const GG = ["Dom","Lun","Mar","Mer","Gio","Ven","Sab"];
+const MM = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+const euro = n => (Math.round(n||0)).toLocaleString("it-IT") + " €";
+const ore = n => (Math.round((n||0)*10)/10).toLocaleString("it-IT");
+const dataIt = s => { if(!s) return "—"; const d=new Date(s+"T00:00:00"); return `${GG[d.getDay()]} ${d.getDate()} ${MM[d.getMonth()]}`; };
+const giorno = s => { const d=new Date(s+"T00:00:00"); return `${d.getDate()}/${d.getMonth()+1}`; };
+const turni = n => n === 1 ? "turno" : "turni";
+function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.style.display="block"; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display="none",2600); }
+
+function daBase64url(s){
+  const b64 = s.replace(/-/g,"+").replace(/_/g,"/") + "=".repeat((4 - s.length % 4) % 4);
+  const bin = atob(b64), out = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i);
+  return out;
+}
+
+/** "g" = compresso, "j" = testo semplice: come lo scrive il gestionale */
+async function apriPacco(p){
+  const tipo = p[0], corpo = daBase64url(p.slice(1));
+  if(tipo === "j") return JSON.parse(new TextDecoder().decode(corpo));
+  if(tipo !== "g") throw new Error("formato sconosciuto");
+  if(!window.DecompressionStream) throw new Error("questo telefono non sa aprire i dati compressi");
+  const flusso = new Blob([corpo]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(flusso).text());
+}
+
+let chiaveCache = null;
+async function derivaChiave(parola, salt, iter){
+  const firma = `${parola}|${salt}|${iter}`;
+  if(chiaveCache && chiaveCache.firma === firma) return chiaveCache.k;
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(parola), "PBKDF2", false, ["deriveKey"]);
+  const k = await crypto.subtle.deriveKey({ name:"PBKDF2", salt:daBase64url(salt), iterations:iter, hash:"SHA-256" },
+    base, { name:"AES-GCM", length:256 }, false, ["decrypt"]);
+  chiaveCache = { firma, k };
+  return k;
+}
+
+async function apriFile(file, parola){
+  if(!file || file.v !== 1 || !file.dati) throw new Error("questo file non è in un formato che conosco");
+  if(!crypto.subtle) throw new Error("questo telefono non sa aprire i file cifrati");
+  const k = await derivaChiave(parola, file.salt, file.iter || 210000);
+  let chiaro;
+  try{ chiaro = await crypto.subtle.decrypt({ name:"AES-GCM", iv:daBase64url(file.iv) }, k, daBase64url(file.dati)); }
+  catch(e){ const err = new Error("parola d'ordine sbagliata"); err.parola = true; throw err; }
+  return apriPacco(new TextDecoder().decode(chiaro));
+}
+
+/** Il codice sta dopo il cancelletto; si accetta anche scritto da solo */
+function trovaCodice(testo){
+  const t = String(testo||"");
+  const m = t.match(/#c=([A-Za-z0-9_-]{4,20})/);
+  if(m) return m[1];
+  const solo = t.trim().toUpperCase();
+  return /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(solo) ? solo : null;
+}
+
+/* ---------- scaricare ---------- */
+let inCorso = false;
+async function aggiorna(manuale){
+  if(inCorso || !db.codice || !db.parola) return;
+  inCorso = true;
+  if(manuale) toast("Controllo…");
+  try{
+    let r;
+    try{ r = await fetch(`u-${db.codice}.json`, { cache:"no-store" }); }
+    catch(e){ throw new Error("non c'è internet, o il sito non risponde. Quello che vedi resta, riprova più tardi."); }
+    if(r.status === 404) throw new Error("sul sito non c'è ancora niente per questo codice (" + db.codice + ")");
+    if(!r.ok) throw new Error("il sito ha risposto " + r.status);
+    const file = await r.json();
+    if(file.ts && file.ts === db.ts){
+      db.quando = new Date().toISOString(); salva();
+      if(manuale) toast("Sei già aggiornato");
+      render();
+      return;
+    }
+    const pacco = await apriFile(file, db.parola);
+    db.pacco = pacco; db.ts = file.ts || ""; db.quando = new Date().toISOString();
+    salva(); render();
+    if(manuale) toast("Aggiornato");
+  }catch(e){
+    if(e.parola){ db.parola = ""; salva(); render(); toast("Parola d'ordine sbagliata"); }
+    else toast(e.message);
+  }finally{ inCorso = false; }
+}
+
+/* ---------- le schermate ---------- */
+function vistaBenvenuto(){
+  return `<div class="card">
+    <p class="tit">Prima volta</p>
+    <p style="margin:0 0 10px">Incolla qui il link che hai copiato dal gestionale, nella pagina <b>Web</b>.</p>
+    <input type="text" id="incolla" placeholder="https://… oppure il codice di sei lettere">
+    <button class="btn pri full" style="margin-top:9px" data-act="leggi">Leggi</button>
+  </div>`;
+}
+
+function vistaParola(){
+  return `<div class="card">
+    <p class="tit">Codice ${esc(db.codice)}</p>
+    <p style="margin:0 0 10px">Scrivi la tua parola d'ordine: serve ad aprire il file, che sul sito è cifrato.</p>
+    <input type="password" id="parola" placeholder="parola d'ordine" autocomplete="current-password">
+    <button class="btn pri full" style="margin-top:9px" data-act="entra">Apri</button>
+    <p class="muted" style="margin:10px 0 0">Se l'hai dimenticata si sceglie una nuova dal gestionale e si ripubblica.</p>
+  </div>`;
+}
+
+function barraViste(){
+  const v = [["oggi","Oggi"],["servizi","Servizi"],["scadenze","Scadenze"],["numeri","Numeri"]];
+  return `<div class="seg">${v.map(([k,n])=>`<button class="${vista===k?"on":""}" data-act="vista" data-v="${k}">${n}</button>`).join("")}</div>`;
+}
+
+function vistaOggi(p){
+  const g = p.giornata;
+  const buchi = g.buchi
+    ? `<div class="card" style="border-color:#e0a0a0;background:var(--rossoSf)">
+        <p class="tit" style="color:var(--rosso)">Da coprire oggi</p>
+        ${g.dovePerBuchi.map(b=>`<div class="el"><div class="nome">${esc(b.n)}</div>
+          <div class="muted">${esc(b.c)} · ${esc(b.h)}</div></div>`).join("")}
+       </div>`
+    : "";
+  return `<div class="card">
+      <p class="tit">${dataIt(p.oggi)}</p>
+      <div class="num">
+        <div><div class="e">turni</div><div class="v">${g.t}</div></div>
+        <div><div class="e">ore</div><div class="v">${ore(g.ore)}</div></div>
+        <div style="background:${g.buchi?"var(--rossoSf)":"var(--okSf)"}">
+          <div class="e" style="color:${g.buchi?"var(--rosso)":"var(--ok)"}">buchi</div>
+          <div class="v" style="color:${g.buchi?"var(--rosso)":"var(--ok)"}">${g.buchi}</div></div>
+      </div>
+    </div>
+    ${buchi}
+    <div class="card">
+      <p class="tit">Chi è in piedi oggi</p>
+      ${g.squadre.length ? g.squadre.map(s=>`<div class="el riga"><span class="sp">${esc(s.n)}</span>
+        <span class="muted">${s.t} ${turni(s.t)}</span></div>`).join("") : `<div class="muted">Nessun turno oggi.</div>`}
+    </div>`;
+}
+
+function vistaServizi(p){
+  const q = (document.getElementById("cerca")?.value || "").toLowerCase().trim();
+  const lista = p.servizi.filter(s => !q || `${s.n} ${s.c} ${s.o}`.toLowerCase().includes(q));
+  const conOggi = p.servizi.filter(s=>s.oggi).length, notte = p.servizi.filter(s=>s.notte).length;
+  return `<div class="card">
+      <div class="num" style="margin-bottom:10px">
+        <div><div class="e">in corso</div><div class="v">${p.servizi.length}</div></div>
+        <div><div class="e">con turno oggi</div><div class="v">${conOggi}</div></div>
+        <div><div class="e">di notte</div><div class="v">${notte}</div></div>
+      </div>
+      <input type="text" id="cerca" placeholder="Cerca cliente, città o operatore" value="${esc(q)}" data-act-input="cerca">
+    </div>
+    <div class="card">
+      ${lista.length ? lista.map(s=>`<div class="el">
+        <div class="riga"><span class="nome sp">${esc(s.n)}</span>
+          ${s.oggi?`<span class="pill" style="background:var(--okSf);color:var(--ok)">oggi</span>`:""}
+          ${s.notte?`<span class="pill" style="background:var(--bluSf);color:var(--blu)">notte</span>`:""}</div>
+        <div class="muted">${esc(s.c)}</div>
+        <div class="muted" style="margin-top:2px">${esc(s.h)} · ${esc(s.o)}</div>
+        <div class="muted" style="color:#8f8e88">${s.r} ${turni(s.r)} ancora · fino al ${giorno(s.f)}</div>
+      </div>`).join("") : `<div class="muted">Niente che corrisponda.</div>`}
+    </div>`;
+}
+
+function vistaScadenze(p){
+  if(!p.scadenze.length) return `<div class="card"><p class="tit">Prossimi dieci giorni</p>
+    <div class="muted">Nessun servizio in scadenza.</div></div>`;
+  return `<div class="card">
+    <p class="tit">Finiscono entro dieci giorni</p>
+    ${p.scadenze.map(s=>{
+      const scade = s.f === p.oggi;
+      return `<div class="el riga">
+        <span class="pill" style="background:${scade?"var(--gialloSf)":"var(--sfondo)"};color:${scade?"var(--giallo)":"var(--grigio)"};min-width:48px;text-align:center">${scade?"oggi":giorno(s.f)}</span>
+        <span class="sp"><span class="nome">${esc(s.n)}</span> <span class="muted">· ${esc(s.c)}</span></span>
+        <span class="muted">${s.r} ${turni(s.r)}</span></div>`;
+    }).join("")}
+    <p class="muted" style="margin:10px 0 0">Un servizio con zero turni rimasti o è finito prima, o manca la programmazione.</p>
+  </div>`;
+}
+
+function vistaNumeri(p){
+  const n = p.numeri, fatta = n.ore ? Math.round(n.oreFatte / n.ore * 100) : 0;
+  const mese = (() => { const [a,m] = p.mese.split("-").map(Number); return `${["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"][m-1]} ${a}`; })();
+  const max = n.clienti.length ? n.clienti[0].ore : 1;
+  return `<div class="card">
+      <p class="tit" style="text-transform:capitalize">${mese}</p>
+      <div class="riga" style="align-items:baseline;gap:6px">
+        <span class="big">${ore(n.oreFatte)}</span><span class="muted">ore fatte su ${ore(n.ore)}</span></div>
+      <div class="barra"><div style="width:${fatta}%"></div></div>
+      <div class="muted">${fatta}% del mese · ${n.t} turni · ${n.persone} persone · ${n.postazioni} postazioni</div>
+    </div>
+    <div class="card">
+      <div class="num">
+        <div><div class="e">costo operatori</div><div class="v" style="font-size:18px">${euro(n.costo)}</div>
+          <div class="e">mese prima ${euro(n.prima.costo)}</div></div>
+        <div><div class="e">fatturato</div><div class="v" style="font-size:18px">${euro(n.fat)}</div>
+          <div class="e">mese prima ${euro(n.prima.fat)}</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="tit">Dove sono finite le ore</p>
+      ${n.clienti.map(c=>`<div style="padding:5px 0">
+        <div class="riga"><span class="sp">${esc(c.n)}</span><span class="muted">${ore(c.ore)} ore · ${euro(c.fat)}</span></div>
+        <div class="barra" style="margin:3px 0 0"><div style="width:${Math.round(c.ore/max*100)}%;background:#5dcaa5"></div></div>
+      </div>`).join("")}
+    </div>`;
+}
+
+function piede(){
+  const q = db.quando ? new Date(db.quando) : null;
+  return `<div class="card">
+    <button class="btn full" data-act="controlla">Controlla se c'è qualcosa di nuovo</button>
+    <p class="muted" style="margin:9px 0 0">
+      ${db.pacco?.quando ? `Pubblicato dall'ufficio il ${new Date(db.pacco.quando).toLocaleString("it-IT")}.<br>` : ""}
+      ${q ? `Guardato l'ultima volta il ${q.toLocaleString("it-IT")}.` : ""}
+    </p>
+    <p class="muted" style="margin:9px 0 0">Codice ${esc(db.codice)} · sola lettura · <a href="#" data-act="scorda">scorda questo telefono</a></p>
+  </div>`;
+}
+
+function render(){
+  const app = document.getElementById("app"), sotto = document.getElementById("sotto");
+  if(!db.codice){ sotto.textContent = "da collegare"; app.innerHTML = vistaBenvenuto(); return; }
+  if(!db.parola){ sotto.textContent = "parola d'ordine"; app.innerHTML = vistaParola(); return; }
+  const p = db.pacco;
+  if(!p){ sotto.textContent = "in arrivo…"; app.innerHTML = `<div class="card"><div class="muted">Scarico…</div></div>` + piede(); return; }
+  sotto.textContent = `${p.servizi.length} servizi in corso · ${p.giornata.t} turni oggi`;
+  const corpo = vista === "oggi" ? vistaOggi(p) : vista === "servizi" ? vistaServizi(p)
+    : vista === "scadenze" ? vistaScadenze(p) : vistaNumeri(p);
+  app.innerHTML = barraViste() + corpo + piede();
+}
+
+/* ---------- comandi ---------- */
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-act]");
+  if(!b) return;
+  const act = b.dataset.act;
+  if(act === "vista"){ vista = b.dataset.v; render(); return; }
+  if(act === "leggi"){
+    const codice = trovaCodice(document.getElementById("incolla").value);
+    if(!codice){ toast("Qui dentro non trovo il codice: incolla tutto il link"); return; }
+    db.codice = codice; db.pacco = null; db.ts = ""; salva(); render();
+    return;
+  }
+  if(act === "entra"){
+    const p = document.getElementById("parola").value;
+    if(p.length < 6){ toast("La parola è più lunga di così"); return; }
+    db.parola = p; salva(); render(); aggiorna(true);
+    return;
+  }
+  if(act === "controlla"){ e.preventDefault(); aggiorna(true); return; }
+  if(act === "scorda"){
+    e.preventDefault();
+    if(confirm("Tolgo tutto da questo telefono? Il link e la parola andranno riscritti.")){
+      db = vuoto(); salva(); chiaveCache = null; render();
+    }
+    return;
+  }
+});
+
+document.addEventListener("input", e => {
+  if(e.target.id === "cerca") render();
+});
+
+/* ---------- partenza ---------- */
+(function(){
+  const codice = trovaCodice(location.hash) || trovaCodice(location.search);
+  if(codice && codice !== db.codice){ db.codice = codice; db.pacco = null; db.ts = ""; salva(); }
+  render();
+  if(db.codice && db.parola) aggiorna(false);
+  // Tornando sull'app dopo un po' si ricontrolla da soli
+  document.addEventListener("visibilitychange", () => {
+    if(!document.hidden && db.codice && db.parola) aggiorna(false);
+  });
+})();
+</script>
+</body>
+</html>
