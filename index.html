@@ -124,6 +124,7 @@ input.i,select.i,textarea.i{width:100%;font:inherit;font-size:16px;padding:10px;
   <button data-act="vista" data-v="giorno"><span class="ic">📅</span>Giorno</button>
   <button data-act="vista" data-v="mese"><span class="ic">🗓️</span>Mese</button>
   <button data-act="vista" data-v="riepilogo"><span class="ic">📊</span>Riepilogo</button>
+  <button data-act="vista" data-v="balance" id="tabBalance" style="display:none"><span class="ic">📈</span>Balance</button>
   <button data-act="vista" data-v="liste"><span class="ic">👥</span>Liste</button>
   <button data-act="vista" data-v="altro"><span class="ic">⚙️</span>Altro</button>
 </nav>
@@ -146,7 +147,7 @@ const MM = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","d
 const TINTE = ["#01696f","#2a5d9f","#c78219","#8a4f9e","#b03a48","#1d8a5e","#5a6b2f","#a0522d"];
 
 /* ---------- dati ---------- */
-function vuoto(){ return { versione:1, risorse:[], servizi:[], turni:[], imp:{ nome:"" } }; }
+function vuoto(){ return { versione:1, risorse:[], servizi:[], turni:[], conti:null, imp:{ nome:"" } }; }
 function carica(){
   try{
     const s = localStorage.getItem(CHIAVE);
@@ -465,6 +466,16 @@ function applicaImport(dati){
    * parte — per esempio un telefono che prima leggeva la squadra di un capo e
    * adesso legge quella dell'ufficio: li' il nome di prima sarebbe falso.
    */
+  /*
+   * I soldi arrivano solo nel pacchetto dell'ufficio. Se il pacchetto non li
+   * porta non si toccano quelli che ci sono: cosi' un messaggio parziale non
+   * cancella il quadro dei conti. Si puliscono solo passando a un pacchetto
+   * di un'altra provenienza (da ufficio a capogruppo), dove i soldi del
+   * vecchio proprietario non c'entrano piu' niente.
+   */
+  if(dati.conti) db.conti = dati.conti;
+  if(dati.capo && db.imp.capoPacco && dati.capo !== db.imp.capoPacco && !dati.conti) db.conti = null;
+
   if(dati.capo && dati.capo !== db.imp.capoPacco){
     if(!db.imp.nome || db.imp.nome === db.imp.capoPacco) db.imp.nome = dati.capo;
     db.imp.capoPacco = dati.capo;
@@ -507,6 +518,12 @@ function foglioImport(dati){
 const stato = { vista:"giorno", giorno:oggi(), mese:oggi().slice(0,7), riep:"op", liste:"risorse" };
 
 function render(){
+  // Balance c'e' solo per chi riceve i conti, cioe' l'ufficio: a un
+  // capogruppo quel pulsante non si accende mai
+  const tabB = document.getElementById("tabBalance");
+  if(tabB) tabB.style.display = db.conti ? "" : "none";
+  if(stato.vista === "balance" && !db.conti) stato.vista = "giorno";
+
   document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on", b.dataset.v===stato.vista));
   document.getElementById("chi").textContent = db.imp.nome ? `Capogruppo: ${db.imp.nome}` : "Tocca Altro per mettere il tuo nome";
   const m = document.getElementById("main");
@@ -700,6 +717,82 @@ function riepServizi(lista){
   return h;
 }
 
+/* ---------- vista BALANCE ---------- */
+/*
+ * Costi, ricavi e margine. Compare solo a chi riceve il pacchetto
+ * dell'ufficio: nel pacchetto di un capogruppo questa roba non c'e'.
+ *
+ * Due disegni e una tabella, perche' le domande sono due:
+ *   come sta andando  -> il mese per mese, con dentro il margine
+ *   dove si guadagna  -> i gruppi in fila, con la percentuale
+ *
+ * La percentuale conta piu' del valore assoluto: un gruppo che fattura poco
+ * e rende il 50% vale piu' attenzione di uno grosso che rende il 30, e dal
+ * fatturato nudo non si vede.
+ */
+const euro = n => Math.round(n||0).toLocaleString("it-IT") + " €";
+const perc = (a,b) => b ? (Math.round(a/b*1000)/10).toLocaleString("it-IT") + "%" : "—";
+const MESIB = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+
+function vistaBalance(){
+  const s = db.conti;
+  if(!s) return `<div class="card vuoto">Qui non arrivano i conti.</div>`;
+  const tot = s.gruppi.reduce((a,g)=>({ costo:a.costo+g.costo, ricavo:a.ricavo+g.ricavo, ore:a.ore+g.ore }), {costo:0,ricavo:0,ore:0});
+  const margine = tot.ricavo - tot.costo;
+  const [anno,mm] = s.mese.split("-").map(Number);
+
+  const maxR = Math.max(...s.mesi.map(m=>m.ricavo), 1);
+  const barre = s.mesi.map(m=>{
+    const h = Math.round(m.ricavo/maxR*120), mg = m.ricavo - m.costo;
+    const hm = m.ricavo ? Math.round(mg/m.ricavo*h) : 0;
+    const suo = m.m === s.mese;
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"
+        title="${MESIB[Number(m.m.slice(5))-1]}: ${euro(m.ricavo)} fatturato, ${euro(mg)} margine${m.futuro?" (ancora da fare)":""}">
+      <div style="width:100%;height:${h}px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;opacity:${m.futuro?.45:1}">
+        <div style="background:#9fe1cb;height:${Math.max(h-hm-2,0)}px;border-radius:4px 4px 0 0"></div>
+        <div style="background:${suo?"#0f6b4f":"#1d9e75"};height:${hm}px;border-radius:0 0 4px 4px"></div>
+      </div>
+      <div style="font-size:11px;color:${suo?"var(--testo)":"var(--grigio)"}">${MESIB[Number(m.m.slice(5))-1]}</div></div>`;
+  }).join("");
+
+  const maxG = Math.max(...s.gruppi.map(g=>g.ricavo-g.costo), 1);
+  const righe = s.gruppi.map(g=>{
+    const mg = g.ricavo - g.costo;
+    return `<div style="padding:6px 0" title="${esc(g.g)}: ${g.n} turni, ${hm2(g.ore)} ore, ${euro(g.costo)} di costo">
+      <div class="riga" style="font-size:13.5px"><span class="sp">${esc(g.g)}</span>
+        <span class="muted">${euro(mg)} · ${perc(mg,g.ricavo)}</span></div>
+      <div style="height:6px;background:var(--sfondo);border-radius:3px;margin-top:3px;overflow:hidden">
+        <div style="width:${Math.round(Math.max(mg,0)/maxG*100)}%;height:100%;background:#1d9e75;border-radius:3px"></div></div></div>`;
+  }).join("");
+
+  return `<div class="card">
+      <div class="muted" style="text-transform:capitalize">${MESI[mm-1]} ${anno}</div>
+      <div class="riga" style="gap:10px;margin-top:8px">
+        <div class="sp"><div class="muted" style="font-size:11px">fatturato</div><div style="font-size:21px;font-weight:700">${euro(tot.ricavo)}</div></div>
+        <div class="sp"><div class="muted" style="font-size:11px">margine</div><div style="font-size:21px;font-weight:700">${euro(margine)}</div>
+          <div class="muted" style="font-size:11px">${perc(margine,tot.ricavo)} del fatturato</div></div>
+      </div>
+      <div class="muted" style="margin-top:6px">costo operatori ${euro(tot.costo)} · ${hm2(tot.ore)} ore</div>
+    </div>
+    <div class="card">
+      <b style="font-size:14px">Mese per mese</b>
+      <p class="muted" style="margin:3px 0 10px">Altezza: fatturato. Pieno scuro: margine. Sbiadito: ancora da fare.</p>
+      <div style="display:flex;gap:6px;align-items:flex-end;height:140px">${barre}</div>
+      <div class="riga" style="gap:14px;margin-top:10px;font-size:12px;color:var(--grigio)">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1d9e75"></span> margine</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9fe1cb"></span> costo operatori</span>
+      </div>
+    </div>
+    <div class="card">
+      <b style="font-size:14px">Dove si guadagna</b>
+      <p class="muted" style="margin:3px 0 8px">Margine del mese per gruppo, e quanto pesa sul fatturato.</p>
+      ${righe || `<div class="muted">Questo mese non c'è ancora niente.</div>`}
+    </div>
+    <p class="muted" style="text-align:center">I conti arrivano dall'ufficio e qui si leggono soltanto.</p>`;
+}
+/** Ore in 142:30 partendo dai decimali */
+const hm2 = dec => hm(Math.round((dec||0)*60));
+
 /* ---------- vista LISTE ---------- */
 /*
  * Solo le persone. I posti dove si lavora stavano qui accanto, in una seconda
@@ -764,7 +857,7 @@ function cardAggiornamento(){
     <div class="btns"><button class="btn pri" data-act="aggiornaOra">Controlla adesso</button><button class="btn" data-act="cambiaParola">Parola d'ordine</button></div></div>`;
 }
 
-const VISTE = { giorno:vistaGiorno, mese:vistaMese, riepilogo:vistaRiepilogo, liste:vistaListe, altro:vistaAltro };
+const VISTE = { giorno:vistaGiorno, mese:vistaMese, riepilogo:vistaRiepilogo, balance:vistaBalance, liste:vistaListe, altro:vistaAltro };
 
 /* ---------- foglio a comparsa ---------- */
 function apriFoglio(html){ const f=document.getElementById("foglio"); f.innerHTML=html; f.style.display="block"; document.getElementById("velo").style.display="block"; f.scrollTop=0; }
