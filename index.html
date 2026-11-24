@@ -29,7 +29,10 @@ nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:6;background:var(--carta
   display:flex;padding-bottom:env(safe-area-inset-bottom)}
 nav.tabs button{flex:1;border:0;background:none;padding:8px 2px 9px;font-size:11px;color:var(--grigio);display:flex;flex-direction:column;align-items:center;gap:2px}
 nav.tabs button .ic{font-size:20px;line-height:1}
-nav.tabs button.on{color:var(--verde);font-weight:700}
+/* Dove sono adesso: non basta il verde, che su sei voci non si vede.
+   La linguetta accesa prende la riga sopra, lo sfondo chiaro e il grassetto. */
+nav.tabs button.on{color:var(--verde);font-weight:700;background:#e9f3f0;box-shadow:inset 0 3px 0 var(--verde)}
+nav.tabs button.on .ic{transform:scale(1.08)}
 .card{background:var(--carta);border:1px solid var(--bordo);border-radius:10px;padding:12px;margin-bottom:10px}
 .riga{display:flex;align-items:center;gap:8px}
 .sp{flex:1}
@@ -111,6 +114,9 @@ input.i,select.i,textarea.i{width:100%;font:inherit;font-size:16px;padding:10px;
   .card{border:0;border-bottom:1px solid #999;border-radius:0;break-inside:avoid;padding:6px 0}
   .solo-stampa{display:block}
   details>summary .chev{display:none}
+  /* Stampando il solo dettaglio del titolare, il resto della schermata
+     non deve finire sul foglio */
+  body[data-stampa="sic"] .non-sic{display:none!important}
 }
 </style>
 </head>
@@ -789,11 +795,17 @@ function vistaBalance(){
         <td class="r num">${euro(x.costo)}</td><td class="r num">${euro(x.fattura)}</td></tr>`).join("")}
       <tr class="tot"><td>Totale ${sic.length} clienti</td><td class="r">${hm2(totSic.ore)}</td>
         <td class="r">${euro(totSic.costo)}</td><td class="r">${euro(totSic.fattura)}</td></tr>
-    </table>` : "";
+    </table>
+    <div class="btns no-stampa" style="margin-top:10px">
+      <button class="btn" data-act="csvSic">📄 Excel</button>
+      <button class="btn" data-act="pdfSic">🖨️ PDF</button>
+    </div>
+    <p class="muted no-stampa" style="margin:8px 0 0">Per mandarlo: fai l'Excel o il PDF e scegli <b>Mail</b> nella finestra che si apre.</p>` : "";
 
-  return `<div class="card">
+  const nomeM = `${MESI[mm-1]} ${anno}`;
+  return `<div class="card non-sic">
       <div class="riga">
-        <div class="sp muted" style="text-transform:capitalize">${MESI[mm-1]} ${anno} · ${scelto.gruppi.length} gruppi · ${t.n} turni · ${hm2(t.ore)} ore</div>
+        <div class="sp muted" style="text-transform:capitalize">${nomeM} · ${scelto.gruppi.length} gruppi · ${t.n} turni · ${hm2(t.ore)} ore</div>
         ${scelto.futuro ? `<span class="pill" style="background:var(--sfondo);color:var(--grigio)">da fare</span>`
           : corrente ? `<span class="pill" style="background:#e6f2ec;color:#1d6a4f">in corso</span>` : ""}
       </div>
@@ -804,7 +816,7 @@ function vistaBalance(){
       </div>
       <div class="muted" style="margin-top:6px">uscite ${euro(t.uscite)} · media delle commesse ${t.pct.toLocaleString("it-IT")}%</div>
     </div>
-    <div class="card">
+    <div class="card non-sic">
       <b style="font-size:14px">Mese per mese</b>
       <p class="muted" style="margin:3px 0 10px">Tocca un mese per guardarlo. Altezza: entrate. Pieno scuro: margine. Sbiadito: ancora da fare.</p>
       <div style="display:flex;gap:6px;align-items:flex-end;height:140px">${barre}</div>
@@ -813,18 +825,19 @@ function vistaBalance(){
         <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9fe1cb"></span> uscite</span>
       </div>
     </div>
-    <div class="card">
-      <b style="font-size:14px">Riepilogo del mese</b>
+    <div class="card non-sic">
+      <b style="font-size:14px;text-transform:capitalize">Riepilogo di ${nomeM}</b>
       <p class="muted" style="margin:3px 0 4px">Gli stessi conti della Chiusura mese, extra compresi.</p>
       ${righe || `<div class="muted">Questo mese non c'è ancora niente.</div>`}
       <div class="riga" style="border-top:2px solid var(--verde);margin-top:8px;padding-top:8px">
         <span class="sp" style="font-weight:700">Totale complessivo</span>
         <span style="font-weight:700;color:${t.pct >= 30 ? "#1d6a4f" : "#7a2430"}">${euro(t.margine)} · ${t.pct.toLocaleString("it-IT")}%</span></div>
     </div>
-    ${sic.length ? `<details class="card"><summary class="riga"><span class="chev">▶</span>
-      <div class="sp"><b style="font-size:14px">Dettaglio SICURITALIA</b>
-        <div class="muted">${sic.length} clienti · ${euro(totSic.fattura)}</div></div></summary>${tabSic}</details>` : ""}
-    <p class="muted" style="text-align:center">I conti arrivano dall'ufficio e qui si leggono soltanto.</p>`;
+    ${sic.length ? `<details class="card" open><summary class="riga"><span class="chev">▶</span>
+      <div class="sp"><b style="font-size:14px;text-transform:capitalize">Dettaglio SICURITALIA · ${nomeM}</b>
+        <div class="muted">${sic.length} clienti · ${euro(totSic.fattura)}</div></div></summary>
+      <div class="solo-stampa" style="margin-top:6px">${esc(db.imp.nome||"")}</div>${tabSic}</details>` : ""}
+    <p class="muted non-sic" style="text-align:center">I conti arrivano dall'ufficio e qui si leggono soltanto.</p>`;
 }
 /** Ore in 142:30 partendo dai decimali */
 const hm2 = dec => hm(Math.round((dec||0)*60));
@@ -1093,6 +1106,27 @@ async function consegnaFile(nome, contenuto, tipo){
  * dal gestionale solo quello che mette lui sopra ai turni — chi ha lavorato e
  * gli orari che corregge — e per portarsi via quello c'e' l'Excel del mese.
  */
+/**
+ * Il dettaglio SICURITALIA del mese che si sta guardando, in foglio di
+ * calcolo. Stesse colonne della pagina Chiusura mese, con i centesimi:
+ * qui i soldi vanno precisi, e' il foglio che va al titolare.
+ */
+function csvSicuritalia(){
+  const s = db.conti;
+  if(!s) return;
+  const mese = s.mesi.find(x=>x.m===stato.meseBal) || s.mesi.find(x=>x.m===s.mese);
+  const righe = (mese && mese.sicuritalia) || [];
+  if(!righe.length){ toast("Questo mese non c'è il dettaglio"); return; }
+  const c = v => { const t=String(v??""); return /[;"\n]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t; };
+  const n = x => (Math.round((x||0)*100)/100).toString().replace(".", ",");
+  const tot = righe.reduce((a,x)=>({ ore:a.ore+x.ore, costo:a.costo+x.costo, fattura:a.fattura+x.fattura }), {ore:0,costo:0,fattura:0});
+  const out = [["CLIENTE","ORE","COSTO","FATTURA"]];
+  for(const x of righe) out.push([x.n, hm2(x.ore), n(x.costo), n(x.fattura)]);
+  out.push([`Totale ${righe.length} clienti`, hm2(tot.ore), n(tot.costo), n(tot.fattura)]);
+  const testo = "﻿" + out.map(r=>r.map(c).join(";")).join("\r\n");
+  consegnaFile(`sicuritalia-${mese.m}.csv`, testo, "text/csv");
+}
+
 function csvMese(){
   const m = stato.mese, lista = turniMese(m);
   if(!lista.length){ toast(`Nessun turno in ${nomeMese(m)}`); return; }
@@ -1211,6 +1245,16 @@ document.addEventListener("click", e => {
      * su una riga che il gestionale non conosce.
      */
     case "csv": csvMese(); break;
+    // Il dettaglio del titolare: foglio di calcolo o foglio di carta.
+    // Da qui non si manda la mail da soli — nessuna pagina web puo' allegare
+    // un file a un messaggio — ma la finestra che si apre ha dentro Mail, e
+    // il file parte da li' con un tocco in piu'.
+    case "csvSic": csvSicuritalia(); break;
+    case "pdfSic":
+      document.body.dataset.stampa = "sic";
+      document.querySelectorAll("details").forEach(d=>d.open=true);
+      setTimeout(()=>{ window.print(); delete document.body.dataset.stampa; }, 100);
+      break;
     case "stampa": document.querySelectorAll("details").forEach(d=>d.open=true); setTimeout(()=>window.print(),100); break;
     case "cancellatutto":
       if(confirm("Cancello TUTTI i dati da questo telefono?") && confirm("Sicuro? I turni l'ufficio li rimanda, ma i nomi che hai messo tu e gli orari che hai corretto si perdono.")){ db = vuoto(); salva(); render(); }
