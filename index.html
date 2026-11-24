@@ -515,7 +515,7 @@ function foglioImport(dati){
  */
 
 /* ---------- stato della schermata ---------- */
-const stato = { vista:"giorno", giorno:oggi(), mese:oggi().slice(0,7), riep:"op", liste:"risorse" };
+const stato = { vista:"giorno", giorno:oggi(), mese:oggi().slice(0,7), riep:"op", liste:"risorse", meseBal:"" };
 
 function render(){
   // Balance c'e' solo per chi riceve i conti, cioe' l'ufficio: a un
@@ -737,29 +737,36 @@ const MESIB = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov"
 function vistaBalance(){
   const s = db.conti;
   if(!s) return `<div class="card vuoto">Qui non arrivano i conti.</div>`;
-  const t = s.tot, [anno,mm] = s.mese.split("-").map(Number);
+  // Il mese che si sta guardando: quello scelto toccando una barra, o quello
+  // in corso. Se il pacchetto nuovo non ce l'ha piu', si torna a quello buono.
+  const scelto = s.mesi.find(x => x.m === stato.meseBal) || s.mesi.find(x => x.m === s.mese) || s.mesi[s.mesi.length-1];
+  const t = scelto, [anno,mm] = scelto.m.split("-").map(Number);
+  const corrente = scelto.m === s.mese;
 
   // ── Il mese per mese: altezza = entrate, pieno scuro = margine ──────────
+  // Toccando una barra si guarda quel mese: tutto quello che sta sotto cambia.
   const maxE = Math.max(...s.mesi.map(m=>m.entrate), 1);
   const barre = s.mesi.map(m=>{
     const h = Math.round(m.entrate/maxE*118);
     const hMarg = m.entrate ? Math.round(m.margine/m.entrate*h) : 0;
-    const suo = m.m === s.mese;
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"
+    const suo = m.m === scelto.m;
+    return `<div data-act="meseBal" data-m="${m.m}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:2px 0;border-radius:6px;background:${suo?"#eef6f3":"transparent"}"
         title="${MESIB[Number(m.m.slice(5))-1]}: ${euro(m.entrate)} entrate, ${euro(m.margine)} margine${m.futuro?" — ancora da fare":""}">
-      <div style="width:100%;height:${h}px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;opacity:${m.futuro?.45:1}">
+      <div style="width:100%;height:${h}px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;opacity:${m.futuro?.45:1};pointer-events:none">
         <div style="background:#9fe1cb;height:${Math.max(h-hMarg-2,0)}px;border-radius:4px 4px 0 0"></div>
         <div style="background:${suo?"#0f6b4f":"#1d9e75"};height:${hMarg}px;border-radius:0 0 4px 4px"></div>
       </div>
-      <div style="font-size:11px;color:${suo?"var(--testo)":"var(--grigio)"}">${MESIB[Number(m.m.slice(5))-1]}</div></div>`;
+      <div style="font-size:11px;font-weight:${suo?700:400};color:${suo?"var(--verde)":"var(--grigio)"};pointer-events:none">${MESIB[Number(m.m.slice(5))-1]}</div></div>`;
   }).join("");
 
   // ── Il riepilogo del mese, gruppo per gruppo ────────────────────────────
   // Su un telefono dieci colonne non ci stanno: una riga sola per gruppo, con
   // sotto il dettaglio di come si arriva a quei numeri.
-  const righe = s.gruppi.map(g=>{
-    const col = g.pct >= 45 ? "#1d6a4f" : g.pct >= 35 ? "#8a6414" : "#7a2430";
-    const sfo = g.pct >= 45 ? "#e6f2ec" : g.pct >= 35 ? "#fdf0d5" : "#fbe9e7";
+  const righe = scelto.gruppi.map(g=>{
+    // Il taglio e' trenta: sotto rosso, sopra verde. Lo decide l'ufficio.
+    const sopra = g.pct >= 30;
+    const col = sopra ? "#1d6a4f" : "#7a2430";
+    const sfo = sopra ? "#e6f2ec" : "#fbe9e7";
     const extra = (g.extU || g.extE)
       ? `<div class="muted" style="font-size:11.5px">extra ${euro(g.extE)} in entrata · ${euro(g.extU)} in uscita</div>` : "";
     return `<div class="el" style="padding:9px 0">
@@ -774,7 +781,7 @@ function vistaBalance(){
   }).join("");
 
   // ── Il dettaglio Sicuritalia, quello che ogni mese va al titolare ───────
-  const sic = s.sicuritalia || [];
+  const sic = scelto.sicuritalia || [];
   const totSic = sic.reduce((a,x)=>({ ore:a.ore+x.ore, costo:a.costo+x.costo, fattura:a.fattura+x.fattura }), {ore:0,costo:0,fattura:0});
   const tabSic = sic.length ? `<table class="t" style="margin-top:8px">
       <tr><th>Cliente</th><th class="r">Ore</th><th class="r">Costo</th><th class="r">Fattura</th></tr>
@@ -785,7 +792,11 @@ function vistaBalance(){
     </table>` : "";
 
   return `<div class="card">
-      <div class="muted" style="text-transform:capitalize">${MESI[mm-1]} ${anno} · ${s.gruppi.length} gruppi · ${t.n} turni · ${hm2(t.ore)} ore</div>
+      <div class="riga">
+        <div class="sp muted" style="text-transform:capitalize">${MESI[mm-1]} ${anno} · ${scelto.gruppi.length} gruppi · ${t.n} turni · ${hm2(t.ore)} ore</div>
+        ${scelto.futuro ? `<span class="pill" style="background:var(--sfondo);color:var(--grigio)">da fare</span>`
+          : corrente ? `<span class="pill" style="background:#e6f2ec;color:#1d6a4f">in corso</span>` : ""}
+      </div>
       <div class="riga" style="gap:10px;margin-top:8px">
         <div class="sp"><div class="muted" style="font-size:11px">entrate</div><div style="font-size:21px;font-weight:700">${euro(t.entrate)}</div></div>
         <div class="sp"><div class="muted" style="font-size:11px">margine</div><div style="font-size:21px;font-weight:700">${euro(t.margine)}</div>
@@ -795,7 +806,7 @@ function vistaBalance(){
     </div>
     <div class="card">
       <b style="font-size:14px">Mese per mese</b>
-      <p class="muted" style="margin:3px 0 10px">Altezza: entrate. Pieno scuro: margine. Sbiadito: ancora da fare.</p>
+      <p class="muted" style="margin:3px 0 10px">Tocca un mese per guardarlo. Altezza: entrate. Pieno scuro: margine. Sbiadito: ancora da fare.</p>
       <div style="display:flex;gap:6px;align-items:flex-end;height:140px">${barre}</div>
       <div class="riga" style="gap:14px;margin-top:10px;font-size:12px;color:var(--grigio)">
         <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1d9e75"></span> margine</span>
@@ -808,7 +819,7 @@ function vistaBalance(){
       ${righe || `<div class="muted">Questo mese non c'è ancora niente.</div>`}
       <div class="riga" style="border-top:2px solid var(--verde);margin-top:8px;padding-top:8px">
         <span class="sp" style="font-weight:700">Totale complessivo</span>
-        <span style="font-weight:700">${euro(t.margine)} · ${t.pct.toLocaleString("it-IT")}%</span></div>
+        <span style="font-weight:700;color:${t.pct >= 30 ? "#1d6a4f" : "#7a2430"}">${euro(t.margine)} · ${t.pct.toLocaleString("it-IT")}%</span></div>
     </div>
     ${sic.length ? `<details class="card"><summary class="riga"><span class="chev">▶</span>
       <div class="sp"><b style="font-size:14px">Dettaglio SICURITALIA</b>
@@ -1118,6 +1129,8 @@ document.addEventListener("click", e => {
     case "mese": stato.mese = spostaMese(stato.mese, Number(el.dataset.n)); render(); break;
     case "apri": stato.giorno = el.dataset.g; stato.vista="giorno"; render(); break;
     case "riep": stato.riep = el.dataset.v; render(); break;
+    // Una barra del grafico: si guarda quel mese
+    case "meseBal": stato.meseBal = el.dataset.m; render(); break;
     case "liste": stato.liste = el.dataset.v; render(); break;
     case "chiudi": chiudiFoglio(); break;
     case "modifica": foglioTurno(db.turni.find(t=>t.id===id)); break;
