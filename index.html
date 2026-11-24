@@ -737,57 +737,82 @@ const MESIB = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov"
 function vistaBalance(){
   const s = db.conti;
   if(!s) return `<div class="card vuoto">Qui non arrivano i conti.</div>`;
-  const tot = s.gruppi.reduce((a,g)=>({ costo:a.costo+g.costo, ricavo:a.ricavo+g.ricavo, ore:a.ore+g.ore }), {costo:0,ricavo:0,ore:0});
-  const margine = tot.ricavo - tot.costo;
-  const [anno,mm] = s.mese.split("-").map(Number);
+  const t = s.tot, [anno,mm] = s.mese.split("-").map(Number);
 
-  const maxR = Math.max(...s.mesi.map(m=>m.ricavo), 1);
+  // ── Il mese per mese: altezza = entrate, pieno scuro = margine ──────────
+  const maxE = Math.max(...s.mesi.map(m=>m.entrate), 1);
   const barre = s.mesi.map(m=>{
-    const h = Math.round(m.ricavo/maxR*120), mg = m.ricavo - m.costo;
-    const hm = m.ricavo ? Math.round(mg/m.ricavo*h) : 0;
+    const h = Math.round(m.entrate/maxE*118);
+    const hMarg = m.entrate ? Math.round(m.margine/m.entrate*h) : 0;
     const suo = m.m === s.mese;
     return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"
-        title="${MESIB[Number(m.m.slice(5))-1]}: ${euro(m.ricavo)} fatturato, ${euro(mg)} margine${m.futuro?" (ancora da fare)":""}">
+        title="${MESIB[Number(m.m.slice(5))-1]}: ${euro(m.entrate)} entrate, ${euro(m.margine)} margine${m.futuro?" — ancora da fare":""}">
       <div style="width:100%;height:${h}px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;opacity:${m.futuro?.45:1}">
-        <div style="background:#9fe1cb;height:${Math.max(h-hm-2,0)}px;border-radius:4px 4px 0 0"></div>
-        <div style="background:${suo?"#0f6b4f":"#1d9e75"};height:${hm}px;border-radius:0 0 4px 4px"></div>
+        <div style="background:#9fe1cb;height:${Math.max(h-hMarg-2,0)}px;border-radius:4px 4px 0 0"></div>
+        <div style="background:${suo?"#0f6b4f":"#1d9e75"};height:${hMarg}px;border-radius:0 0 4px 4px"></div>
       </div>
       <div style="font-size:11px;color:${suo?"var(--testo)":"var(--grigio)"}">${MESIB[Number(m.m.slice(5))-1]}</div></div>`;
   }).join("");
 
-  const maxG = Math.max(...s.gruppi.map(g=>g.ricavo-g.costo), 1);
+  // ── Il riepilogo del mese, gruppo per gruppo ────────────────────────────
+  // Su un telefono dieci colonne non ci stanno: una riga sola per gruppo, con
+  // sotto il dettaglio di come si arriva a quei numeri.
   const righe = s.gruppi.map(g=>{
-    const mg = g.ricavo - g.costo;
-    return `<div style="padding:6px 0" title="${esc(g.g)}: ${g.n} turni, ${hm2(g.ore)} ore, ${euro(g.costo)} di costo">
-      <div class="riga" style="font-size:13.5px"><span class="sp">${esc(g.g)}</span>
-        <span class="muted">${euro(mg)} · ${perc(mg,g.ricavo)}</span></div>
-      <div style="height:6px;background:var(--sfondo);border-radius:3px;margin-top:3px;overflow:hidden">
-        <div style="width:${Math.round(Math.max(mg,0)/maxG*100)}%;height:100%;background:#1d9e75;border-radius:3px"></div></div></div>`;
+    const col = g.pct >= 45 ? "#1d6a4f" : g.pct >= 35 ? "#8a6414" : "#7a2430";
+    const sfo = g.pct >= 45 ? "#e6f2ec" : g.pct >= 35 ? "#fdf0d5" : "#fbe9e7";
+    const extra = (g.extU || g.extE)
+      ? `<div class="muted" style="font-size:11.5px">extra ${euro(g.extE)} in entrata · ${euro(g.extU)} in uscita</div>` : "";
+    return `<div class="el" style="padding:9px 0">
+      <div class="riga"><span class="sp" style="font-weight:700;font-size:14px">${esc(g.g)}</span>
+        <span class="pill" style="background:${sfo};color:${col};font-weight:700">${g.pct.toLocaleString("it-IT")}%</span></div>
+      <div class="riga muted" style="margin-top:3px;font-size:12.5px">
+        <span class="sp">${hm2(g.ore)} ore · ${g.n} turni</span>
+        <span>margine <b style="color:var(--testo)">${euro(g.margine)}</b></span></div>
+      <div class="muted" style="font-size:11.5px">entrate ${euro(g.entrate)} · uscite ${euro(g.uscite)}</div>
+      ${extra}
+    </div>`;
   }).join("");
 
+  // ── Il dettaglio Sicuritalia, quello che ogni mese va al titolare ───────
+  const sic = s.sicuritalia || [];
+  const totSic = sic.reduce((a,x)=>({ ore:a.ore+x.ore, costo:a.costo+x.costo, fattura:a.fattura+x.fattura }), {ore:0,costo:0,fattura:0});
+  const tabSic = sic.length ? `<table class="t" style="margin-top:8px">
+      <tr><th>Cliente</th><th class="r">Ore</th><th class="r">Costo</th><th class="r">Fattura</th></tr>
+      ${sic.map(x=>`<tr><td>${esc(x.n)}</td><td class="r num">${hm2(x.ore)}</td>
+        <td class="r num">${euro(x.costo)}</td><td class="r num">${euro(x.fattura)}</td></tr>`).join("")}
+      <tr class="tot"><td>Totale ${sic.length} clienti</td><td class="r">${hm2(totSic.ore)}</td>
+        <td class="r">${euro(totSic.costo)}</td><td class="r">${euro(totSic.fattura)}</td></tr>
+    </table>` : "";
+
   return `<div class="card">
-      <div class="muted" style="text-transform:capitalize">${MESI[mm-1]} ${anno}</div>
+      <div class="muted" style="text-transform:capitalize">${MESI[mm-1]} ${anno} · ${s.gruppi.length} gruppi · ${t.n} turni · ${hm2(t.ore)} ore</div>
       <div class="riga" style="gap:10px;margin-top:8px">
-        <div class="sp"><div class="muted" style="font-size:11px">fatturato</div><div style="font-size:21px;font-weight:700">${euro(tot.ricavo)}</div></div>
-        <div class="sp"><div class="muted" style="font-size:11px">margine</div><div style="font-size:21px;font-weight:700">${euro(margine)}</div>
-          <div class="muted" style="font-size:11px">${perc(margine,tot.ricavo)} del fatturato</div></div>
+        <div class="sp"><div class="muted" style="font-size:11px">entrate</div><div style="font-size:21px;font-weight:700">${euro(t.entrate)}</div></div>
+        <div class="sp"><div class="muted" style="font-size:11px">margine</div><div style="font-size:21px;font-weight:700">${euro(t.margine)}</div>
+          <div class="muted" style="font-size:11px">${t.pctPesata.toLocaleString("it-IT")}% sul fatturato</div></div>
       </div>
-      <div class="muted" style="margin-top:6px">costo operatori ${euro(tot.costo)} · ${hm2(tot.ore)} ore</div>
+      <div class="muted" style="margin-top:6px">uscite ${euro(t.uscite)} · media delle commesse ${t.pct.toLocaleString("it-IT")}%</div>
     </div>
     <div class="card">
       <b style="font-size:14px">Mese per mese</b>
-      <p class="muted" style="margin:3px 0 10px">Altezza: fatturato. Pieno scuro: margine. Sbiadito: ancora da fare.</p>
+      <p class="muted" style="margin:3px 0 10px">Altezza: entrate. Pieno scuro: margine. Sbiadito: ancora da fare.</p>
       <div style="display:flex;gap:6px;align-items:flex-end;height:140px">${barre}</div>
       <div class="riga" style="gap:14px;margin-top:10px;font-size:12px;color:var(--grigio)">
         <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1d9e75"></span> margine</span>
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9fe1cb"></span> costo operatori</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9fe1cb"></span> uscite</span>
       </div>
     </div>
     <div class="card">
-      <b style="font-size:14px">Dove si guadagna</b>
-      <p class="muted" style="margin:3px 0 8px">Margine del mese per gruppo, e quanto pesa sul fatturato.</p>
+      <b style="font-size:14px">Riepilogo del mese</b>
+      <p class="muted" style="margin:3px 0 4px">Gli stessi conti della Chiusura mese, extra compresi.</p>
       ${righe || `<div class="muted">Questo mese non c'è ancora niente.</div>`}
+      <div class="riga" style="border-top:2px solid var(--verde);margin-top:8px;padding-top:8px">
+        <span class="sp" style="font-weight:700">Totale complessivo</span>
+        <span style="font-weight:700">${euro(t.margine)} · ${t.pct.toLocaleString("it-IT")}%</span></div>
     </div>
+    ${sic.length ? `<details class="card"><summary class="riga"><span class="chev">▶</span>
+      <div class="sp"><b style="font-size:14px">Dettaglio SICURITALIA</b>
+        <div class="muted">${sic.length} clienti · ${euro(totSic.fattura)}</div></div></summary>${tabSic}</details>` : ""}
     <p class="muted" style="text-align:center">I conti arrivano dall'ufficio e qui si leggono soltanto.</p>`;
 }
 /** Ore in 142:30 partendo dai decimali */
