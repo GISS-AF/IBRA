@@ -86,7 +86,23 @@ table.t tr.tot td{font-weight:800;border-top:2px solid var(--verde);border-botto
 details>summary{list-style:none;cursor:pointer}
 details>summary::-webkit-details-marker{display:none}
 .chev{transition:transform .15s;color:var(--grigio)}
-details[open] .chev{transform:rotate(90deg)}
+/* La freccia che gira e' solo quella del pannello che si e' aperto: con i
+   pannelli dentro ai pannelli, senza il ">" girerebbero anche quelle dei
+   clienti chiusi che stanno dentro al gruppo */
+details[open]>summary>.chev{transform:rotate(90deg)}
+/* ── sola vista: gruppo -> cliente, e la riga dei soldi ── */
+.soldi{font-size:11.5px;color:var(--grigio);font-variant-numeric:tabular-nums;margin-top:3px;line-height:1.55;white-space:nowrap}
+.soldi b{font-weight:800}
+.soldi .ok{color:#1d8a5e}
+.soldi .ko{color:var(--rosso)}
+/* Il cliente dentro al gruppo: rientrato e senza cornice sua, cosi' si vede
+   che sta dentro e non accanto */
+details.card.dentro{border:0;border-top:1px solid #eeece6;border-radius:0;padding:10px 0 10px 10px;margin:0}
+details.gruppo[open]>summary{border-bottom:1px solid var(--bordo);padding-bottom:10px}
+/* Sei colonne su un telefono: si stringe, se no la tabella esce dallo schermo */
+table.t.stretta{font-size:12px}
+table.t.stretta th,table.t.stretta td{padding:5px 3px}
+table.t .gg{white-space:nowrap}
 .lista-el{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #eeece6;cursor:pointer}
 .lista-el:last-child{border-bottom:0}
 .pill{font-size:11px;border-radius:20px;padding:2px 8px;background:#e7e5df;color:var(--grigio)}
@@ -367,8 +383,14 @@ function applicaImport(dati){
    *
    * In un messaggio parziale l'elenco dei nomi non viaggia: li' si resta alle
    * regole normali, se no un pacchetto senza nomi li cancellerebbe tutti.
+   *
+   * Specchio sono i due pacchetti di casa: l'ufficio (capoId 0) e il titolare
+   * (capoId -1).
    */
-  const ufficio = dati.capoId === 0 && !dati.parziale;
+  const ufficio = (dati.capoId === 0 || dati.capoId === -1) && !dati.parziale;
+  // Sola vista: lo dice il file, non un'impostazione del telefono. Da qui
+  // l'app spegne ogni modifica e nasconde le Liste.
+  if(!dati.parziale) db.imp.solaVista = dati.sv === 1;
 
   // ── Le persone della squadra ──────────────────────────────────────────
   // Si cerca prima per id del gestionale. Il nome e' solo un ripiego, per
@@ -402,6 +424,10 @@ function applicaImport(dati){
     }
     if(!s.gid && p.k) s.gid = p.k;
     if(!s.indirizzo && p.i) s.indirizzo = p.i;
+    // Gruppo e citta': arrivano solo al titolare, e sono i due livelli del
+    // suo riepilogo
+    if(p.gr) s.gruppo = p.gr;
+    if(p.ct) s.citta = p.ct;
     // Postazioni create dalla versione di prima, con l'indirizzo dentro al
     // nome: si rimette a posto il nome, l'indirizzo e' gia' nel suo campo
     if(p.i && s.nome === `${p.n} · ${p.i}`) s.nome = p.n;
@@ -417,6 +443,9 @@ function applicaImport(dati){
     arrivati.add(n.g);
     const prev = previstoDa(n, perPost[n.p]);
     const v = perGid[n.g];
+    // I soldi del turno: le due tariffe che si leggono sulla riga e i due
+    // importi che fanno i totali. Arrivano solo al titolare.
+    const soldi = n.co === undefined ? null : { tc:n.tc||0, tf:n.tf||0, co:n.co||0, fa:n.fa||0 };
 
     if(!v){
       // Il turno arriva gia' intestato a chi lo ha nel gestionale — di norma
@@ -427,7 +456,7 @@ function applicaImport(dati){
         id:uid(), gid:n.g, data:n.d, servizioId:perPost[n.p]||"",
         risorsaId: (n.o && perOp[n.o]) || "",
         dalle:prev.dalle, alle:prev.alle, dalle2:prev.dalle2, alle2:prev.alle2,
-        note:n.note||"", prev, statoUff:"",
+        note:n.note||"", prev, statoUff:"", ...(soldi ? { soldi } : {}),
         // "uff" = il nome e' ancora quello dell'ufficio, il capogruppo non
         // l'ha ancora smistato. Non si vede a schermo: e' la traccia di
         // cosa ha gia' guardato, se un domani serve.
@@ -466,6 +495,7 @@ function applicaImport(dati){
     const orariNonToccati = ufficio || !v.prev || stessoOrario(v, v.prev);
     const notaNonToccata = ufficio || !v.prev || (v.note||"") === (v.prev.note||"");
     if(cambiaNome){ v.risorsaId = nomeUff; v.uff = 1; }
+    if(soldi) v.soldi = soldi;
     v.data = n.d;
     v.servizioId = perPost[n.p] || v.servizioId;
     if(notaNonToccata) v.note = prev.note;
@@ -553,8 +583,17 @@ function render(){
   if(tabB) tabB.style.display = db.conti ? "" : "none";
   if(stato.vista === "balance" && !db.conti) stato.vista = "giorno";
 
+  // Sola vista (il titolare): le Liste non servono — non c'e' niente da
+  // aggiungere ne' da sistemare
+  const sv = !!db.imp.solaVista;
+  const tabL = document.querySelector('#tabs button[data-v="liste"]');
+  if(tabL) tabL.style.display = sv ? "none" : "";
+  if(sv && stato.vista === "liste") stato.vista = "giorno";
+
   document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on", b.dataset.v===stato.vista));
-  document.getElementById("chi").textContent = db.imp.nome ? `Capogruppo: ${db.imp.nome}` : "Tocca Altro per mettere il tuo nome";
+  document.getElementById("chi").textContent = sv
+    ? "Tutte le squadre · sola lettura"
+    : (db.imp.nome ? `Capogruppo: ${db.imp.nome}` : "Tocca Altro per mettere il tuo nome");
   const m = document.getElementById("main");
   m.innerHTML = VISTE[stato.vista]();
   window.scrollTo(0,0);
@@ -592,6 +631,9 @@ function vistaGiorno(){
         return [p?`${p} person${p===1?"a":"e"}`:"", d?`${d} da assegnare`:""].filter(Boolean).join("<br>") || "—";
       })()}</div></div>`;
   if(!lista.length) h += `<div class="card vuoto">Nessun turno in questo giorno.</div>`;
+  // Il titolare guarda tutte le squadre: in una giornata sono un'ottantina di
+  // righe sparse per l'Italia. Raggruppate per cliente si scorrono.
+  if(db.imp.solaVista) return h + giornoPerGruppo(lista);
   for(const t of lista){
     const daAssegnare = !t.risorsaId;
     const annullato = t.statoUff === "annullato";
@@ -615,6 +657,42 @@ function vistaGiorno(){
    * mano qui dentro vorrebbe dire scrivere righe che l'ufficio non conosce.
    * Lui lavora giorno per giorno: tocca il turno e lo sistema.
    */
+  return h;
+}
+
+/**
+ * La giornata del titolare, raggruppata per cliente.
+ *
+ * Si apre il cliente e si vedono le sue postazioni di quel giorno. I gruppi
+ * vanno dal piu' grosso al piu' piccolo: quello con venti negozi e' anche
+ * quello su cui si guarda per primo.
+ */
+function giornoPerGruppo(lista){
+  const per = {};
+  for(const t of lista) (per[gruppoS(t.servizioId) || nomeS(t.servizioId)] ||= []).push(t);
+  const nomi = Object.keys(per).sort((a,b)=>per[b].length - per[a].length || a.localeCompare(b));
+  const dove = id => { const s = servizio(id); return (s && s.citta) || nomeS(id); };
+  let h = "";
+  for(const g of nomi){
+    const ts = per[g].slice().sort((a,b)=>dove(a.servizioId).localeCompare(dove(b.servizioId)));
+    const tot = ts.reduce((s,t)=>s+minTurno(t),0);
+    const post = new Set(ts.map(t=>t.servizioId)).size;
+    h += `<details class="card gruppo"><summary class="riga"><span class="chev">▶</span>
+        <span style="width:12px;height:12px;border-radius:50%;background:${coloreS(ts[0].servizioId)}"></span>
+        <div class="sp"><div style="font-weight:800;font-size:16px">${esc(g)}</div>
+          <div class="muted">${ts.length} turn${ts.length===1?"o":"i"} · ${post} postazion${post===1?"e":"i"}</div></div>
+        <div class="big" style="font-size:22px">${hm(tot)}</div></summary>
+      <table class="t" style="margin-top:10px"><tr><th>Postazione</th><th>Dalle · alle</th><th style="padding-left:10px">Operatore</th><th class="r">Ore</th></tr>
+      ${ts.map(t=>{
+        const ps = parti(t).filter(p=>p.min||p.risorsaId);
+        const s = servizio(t.servizioId);
+        return ps.map((p,i)=>`<tr>${i===0?`<td rowspan="${ps.length}">${esc(dove(t.servizioId))}${s?.indirizzo?`<div class="muted" style="font-size:11px">${esc(s.indirizzo)}</div>`:""}</td>`:""}
+          <td style="white-space:nowrap">${esc(p.orario).replace(" + ","<br>")}</td>
+          <td style="padding-left:10px">${esc(nomeR(p.risorsaId)) || "—"}</td>
+          <td class="r num">${hm(p.min)}</td></tr>`).join("");
+      }).join("")}
+      <tr class="tot"><td colspan="3">Totale ${esc(g)}</td><td class="r">${hm(tot)}</td></tr></table></details>`;
+  }
   return h;
 }
 
@@ -704,45 +782,121 @@ function riepOperatori(lista){
  */
 function giorniServizio(ts){
   const giorni = {};
-  for(const t of ts) for(const p of parti(t)){ if(p.min || p.risorsaId) (giorni[t.data] ||= []).push(p); }
+  // Ci si porta dietro il turno, non solo la parte: le tariffe stanno li'
+  for(const t of ts) for(const p of parti(t)){ if(p.min || p.risorsaId) (giorni[t.data] ||= []).push({ ...p, t }); }
   const date = Object.keys(giorni).sort();
   if(!date.length) return "";
+  // Le due tariffe arrivano solo nel pacchetto del titolare: dove non ci sono,
+  // la tabella resta quella di sempre a quattro colonne
+  const conSoldi = ts.some(t => t.soldi);
   let righe = "", tot = 0;
   for(const g of date){
     const ps = giorni[g], d = daIso(g), totG = ps.reduce((s,p)=>s+p.min,0);
     tot += totG;
     ps.forEach((p,i)=>{
-      righe += `<tr>${i===0?`<td rowspan="${ps.length}"${d.getDay()===0?` style="color:#b03a48"`:""}><b>${d.getDate()}</b> ${GG[d.getDay()]}</td>`:""}
-        <td class="r" style="padding-right:18px">${esc(p.orario).replace(" + ","<br>")}</td>
-        <td style="padding-left:6px">${esc(nomeR(p.risorsaId))}</td>
-        <td class="r num">${hm(p.min)}</td></tr>`;
+      righe += `<tr>${i===0?`<td rowspan="${ps.length}" class="gg"${d.getDay()===0?` style="color:#b03a48"`:""}><b>${d.getDate()}</b> ${GG[d.getDay()]}</td>`:""}
+        <td class="r" style="padding-right:${conSoldi?8:18}px">${esc(p.orario).replace(" + ","<br>")}</td>
+        <td style="padding-left:${conSoldi?10:6}px">${esc(nomeR(p.risorsaId))}</td>
+        <td class="r num">${hm(p.min)}</td>
+        ${conSoldi?`<td class="r num">${p.t.soldi?eu2(p.t.soldi.tc):""}</td><td class="r">${p.t.soldi?eu2(p.t.soldi.tf):""}</td>`:""}</tr>`;
     });
   }
-  return `<table class="t" style="margin-top:8px"><tr><th>Giorno</th><th class="r" style="padding-right:18px">Dalle · alle</th><th style="padding-left:6px">Operatore</th><th class="r">Ore</th></tr>${righe}
-    <tr class="tot"><td colspan="3">Totale ${date.length} giorn${date.length===1?"o":"i"}</td><td class="r">${hm(tot)}</td></tr></table>`;
+  return `<table class="t ${conSoldi?"stretta":""}" style="margin-top:8px"><tr><th class="gg">Giorno</th><th class="r" style="padding-right:${conSoldi?8:18}px">Dalle · alle</th><th style="padding-left:${conSoldi?10:6}px">Operatore</th><th class="r">Ore</th>${conSoldi?`<th class="r">Op. €/h</th><th class="r">Fatt. €/h</th>`:""}</tr>${righe}
+    <tr class="tot"><td colspan="3">Totale ${date.length} giorn${date.length===1?"o":"i"}</td><td class="r">${hm(tot)}</td>${conSoldi?"<td></td><td></td>":""}</tr></table>`;
 }
+
+/* ---------- i soldi di un gruppo di turni (solo per il titolare) ---------- */
+/** Due decimali all'italiana: 12,00 */
+const eu2 = n => (Math.round((n||0)*100)/100).toFixed(2).replace(".", ",");
+/**
+ * Costo, fatturato e margine di un pacchetto di turni.
+ *
+ * Torna null se i soldi non ci sono — e' il caso di tutti tranne il titolare,
+ * e serve a far sparire da sola ogni riga di euro dalle altre app.
+ */
+function soldiDi(ts){
+  let c = 0, f = 0, ha = false;
+  for(const t of ts) if(t.soldi){ ha = true; c += t.soldi.co||0; f += t.soldi.fa||0; }
+  if(!ha) return null;
+  return { c, f, m: f - c, p: f ? Math.round((f-c)/f*1000)/10 : 0 };
+}
+/** La riga di euro sotto al nome. Verde sopra il 30, rosso sotto: la regola e' una sola */
+const rigaSoldi = s => s
+  ? `<div class="soldi">costo ${euro(s.c)} · fatturato ${euro(s.f)}<br>margine <b>${euro(s.m)}</b> · <b class="${s.p>=30?"ok":"ko"}">${String(s.p).replace(".", ",")}%</b></div>`
+  : "";
 function riepServizi(lista){
+  // Col pacchetto del titolare le postazioni portano il gruppo: allora si
+  // entra per gruppo. Negli altri l'elenco resta piatto, com'e' sempre stato.
+  if(lista.some(t => gruppoS(t.servizioId))) return riepGruppi(lista);
   const per = {};
   for(const t of lista){ (per[t.servizioId] ||= []).push(t); }
   const ids = Object.keys(per).sort((a,b)=>nomeS(a).localeCompare(nomeS(b)));
-  let h = "";
-  for(const id of ids){
-    const ts = per[id], tot = ts.reduce((s,t)=>s+minTurno(t),0), s = servizio(id);
-    const perOp = {}; for(const t of ts) for(const p of parti(t)){ if(p.min||p.risorsaId) perOp[p.risorsaId]=(perOp[p.risorsaId]||0)+p.min; }
-    let prev = "";
-    if(s && s.orePreviste){
-      const diff = tot - s.orePreviste*60;
-      const col = Math.abs(diff)<1 ? "#1d8a5e" : (diff<0 ? "#c78219" : "#b03a48");
-      prev = `<div style="color:${col};font-size:13px;font-weight:700">Previste ${hm(s.orePreviste*60)} · ${Math.abs(diff)<1?"✓ in linea":(diff<0?`mancano ${hm(-diff)}`:`in più ${hm(diff)}`)}</div>`;
-    }
-    h += `<details class="card"><summary class="riga"><span class="chev">▶</span><span style="width:10px;height:10px;border-radius:50%;background:${coloreS(id)}"></span>
-        <div class="sp"><div style="font-weight:700">${esc(nomeS(id))}</div>${s?.indirizzo?`<div class="muted">${esc(s.indirizzo)}</div>`:""}${prev}</div>
-        <div class="big" style="font-size:22px">${hm(tot)}</div></summary>
-      ${giorniServizio(ts)}
-      <table class="t" style="margin-top:12px"><tr><th>Operatore</th><th class="r">Ore</th></tr>
-      ${Object.keys(perOp).sort((a,b)=>nomeR(a).localeCompare(nomeR(b))).map(o=>`<tr><td>${esc(nomeR(o))}</td><td class="r num">${hm(perOp[o])}</td></tr>`).join("")}
-      <tr class="tot"><td>Totale</td><td class="r">${hm(tot)}</td></tr></table></details>`;
+  return ids.map(id => schedaServizio(id, per[id], "")).join("");
+}
+
+/**
+ * La scheda di una postazione: nome, indirizzo, ore, e dentro i giorni.
+ *
+ * `titolo` serve quando sta dentro a un gruppo: li' ripetere trenta volte
+ * "ACTION" non dice niente, e al suo posto va la citta'.
+ */
+function schedaServizio(id, ts, classe, titolo){
+  const tot = ts.reduce((s,t)=>s+minTurno(t),0), s = servizio(id);
+  const perOp = {}; for(const t of ts) for(const p of parti(t)){ if(p.min||p.risorsaId) perOp[p.risorsaId]=(perOp[p.risorsaId]||0)+p.min; }
+  let prev = "";
+  if(s && s.orePreviste){
+    const diff = tot - s.orePreviste*60;
+    const col = Math.abs(diff)<1 ? "#1d8a5e" : (diff<0 ? "#c78219" : "#b03a48");
+    prev = `<div style="color:${col};font-size:13px;font-weight:700">Previste ${hm(s.orePreviste*60)} · ${Math.abs(diff)<1?"✓ in linea":(diff<0?`mancano ${hm(-diff)}`:`in più ${hm(diff)}`)}</div>`;
   }
+  return `<details class="card ${classe}"><summary class="riga"><span class="chev">▶</span><span style="width:10px;height:10px;border-radius:50%;background:${coloreS(id)}"></span>
+      <div class="sp"><div style="font-weight:700">${esc(titolo || nomeS(id))}</div>${s?.indirizzo?`<div class="muted">${esc(s.indirizzo)}</div>`:""}${prev}${rigaSoldi(soldiDi(ts))}</div>
+      <div class="big" style="font-size:${classe?19:22}px">${hm(tot)}</div></summary>
+    ${giorniServizio(ts)}
+    <table class="t" style="margin-top:12px"><tr><th>Operatore</th><th class="r">Ore</th></tr>
+    ${Object.keys(perOp).sort((a,b)=>nomeR(a).localeCompare(nomeR(b))).map(o=>`<tr><td>${esc(nomeR(o))}</td><td class="r num">${hm(perOp[o])}</td></tr>`).join("")}
+    <tr class="tot"><td>Totale</td><td class="r">${hm(tot)}</td></tr></table></details>`;
+}
+
+/** Il gruppo di una postazione: c'e' solo nel pacchetto del titolare */
+const gruppoS = id => servizio(id)?.gruppo || "";
+
+/**
+ * Riepilogo a due livelli: prima il gruppo, poi il cliente, poi i giorni.
+ *
+ * Serve quando i clienti sono centoventi: trovare il negozio che rende poco
+ * in un elenco unico non si fa. I gruppi vengono per fatturato, i clienti in
+ * ordine di nome.
+ */
+function riepGruppi(lista){
+  const per = {};
+  for(const t of lista) (per[gruppoS(t.servizioId) || nomeS(t.servizioId)] ||= []).push(t);
+  const nomi = Object.keys(per).sort((a,b)=>{
+    const sa = soldiDi(per[a]), sb = soldiDi(per[b]);
+    return (sb?sb.f:0) - (sa?sa.f:0) || a.localeCompare(b);
+  });
+
+  const tuttoS = soldiDi(lista), tutto = lista.reduce((s,t)=>s+minTurno(t),0);
+  let h = `<div class="card riga"><div class="sp"><div style="font-weight:700;text-transform:capitalize">${nomeMese(stato.mese)}</div>
+      <div class="muted">${lista.length} turni · ${nomi.length} grupp${nomi.length===1?"o":"i"}</div>${rigaSoldi(tuttoS)}</div>
+    <div class="big">${hm(tutto)}</div></div>`;
+
+  for(const g of nomi){
+    const ts = per[g], tot = ts.reduce((s,t)=>s+minTurno(t),0);
+    const perS = {}; for(const t of ts) (perS[t.servizioId] ||= []).push(t);
+    // Dentro al gruppo il titolo e' il nome del cliente quando e' diverso dal
+    // gruppo (SICURITALIA -> ALDI), altrimenti la citta' (ACTION -> CENTO)
+    const titolo = id => { const s = servizio(id); return (s && s.nome && s.nome !== g) ? s.nome : ((s && s.citta) || nomeS(id)); };
+    const ids = Object.keys(perS).sort((a,b)=>titolo(a).localeCompare(titolo(b)));
+    h += `<details class="card gruppo"><summary class="riga"><span class="chev">▶</span>
+        <span style="width:12px;height:12px;border-radius:50%;background:${coloreS(ids[0])}"></span>
+        <div class="sp"><div style="font-weight:800;font-size:16px">${esc(g)}</div>
+          <div class="muted">${ids.length} client${ids.length===1?"e":"i"} · ${ts.length} turni</div>${rigaSoldi(soldiDi(ts))}</div>
+        <div class="big" style="font-size:22px">${hm(tot)}</div></summary>
+      ${ids.map(id => schedaServizio(id, perS[id], "dentro", titolo(id))).join("")}</details>`;
+  }
+  // La riga che spiega perche' qui e nel Balance i totali non coincidono
+  if(tuttoS) h += `<p class="muted" style="text-align:center;margin:10px 2px">Senza i servizi a fatturazione esterna: quelli li trovi nel <b>Balance</b>.</p>`;
   return h;
 }
 
@@ -1289,6 +1443,14 @@ function csvMese(){
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if(!el) return;
   const a = el.dataset.act, id = el.dataset.id;
+  /*
+   * Sola vista: qui finiscono tutte le strade che cambiano qualcosa.
+   *
+   * Si spegne qui, in un posto solo, e non nascondendo i pulsanti uno per
+   * uno: anche se un pulsante restasse disegnato da qualche parte, non fa
+   * niente lo stesso.
+   */
+  if(db.imp.solaVista && ["modifica","salvaT","nuovaR","modR","salvaR","eliminaR"].includes(a)) return;
   switch(a){
     case "vista": stato.vista = el.dataset.v; if(stato.vista==="giorno"&&!stato.giorno) stato.giorno=oggi(); render(); break;
     case "giorno": stato.giorno = spostaGiorno(stato.giorno, Number(el.dataset.n)); render(); break;
