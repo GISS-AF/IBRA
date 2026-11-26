@@ -356,6 +356,20 @@ function applicaImport(dati){
 
   const uguale = (a,b) => String(a||"").trim().toLowerCase() === String(b||"").trim().toLowerCase();
 
+  /*
+   * Chi manda il pacchetto cambia le regole del gioco.
+   *
+   * Il pacchetto dell'ufficio (capoId 0, "tutte le squadre") e' uno specchio
+   * del gestionale: chi lo guarda e' la stessa persona che scrive la' dentro,
+   * quindi qui non si difende niente, si rifa' tutto come sta nel gestionale —
+   * nome dell'operatore compreso. Il pacchetto di un capogruppo invece arriva
+   * da fuori, e li' quello che lui ha scritto sul telefono vale di piu'.
+   *
+   * In un messaggio parziale l'elenco dei nomi non viaggia: li' si resta alle
+   * regole normali, se no un pacchetto senza nomi li cancellerebbe tutti.
+   */
+  const ufficio = dati.capoId === 0 && !dati.parziale;
+
   // ── Le persone della squadra ──────────────────────────────────────────
   // Si cerca prima per id del gestionale. Il nome e' solo un ripiego, per
   // agganciare chi il capogruppo aveva gia' scritto a mano, e vale una volta
@@ -437,12 +451,21 @@ function applicaImport(dati){
      * c'era davvero. Vale anche se nel gestionale il turno viene spostato su
      * un altro operatore: qui cambiano il giorno, gli orari, la postazione e
      * la nota — mai la persona.
+     *
+     * Nell'app dell'ufficio invece la persona cambia come tutto il resto: quel
+     * nome lo mette lui nel gestionale, ed e' quello che vuole rivedere sul
+     * telefono. Senza questo, un operatore aggiunto a turni gia' scaricati non
+     * si sarebbe mai visto.
      */
-    // Cambiato dall'ufficio: orari, giorno, nota o postazione
-    const cambiato = !stessoPrevisto(v.prev, prev) || v.data !== n.d;
-    // Lo svolto lo si tocca solo se lui non l'aveva gia' corretto
-    const orariNonToccati = !v.prev || stessoOrario(v, v.prev);
-    const notaNonToccata = !v.prev || (v.note||"") === (v.prev.note||"");
+    const nomeUff = (n.o && perOp[n.o]) || "";
+    const cambiaNome = ufficio && v.risorsaId !== nomeUff;
+    // Cambiato dall'ufficio: orari, giorno, nota, postazione — o la persona
+    const cambiato = !stessoPrevisto(v.prev, prev) || v.data !== n.d || cambiaNome;
+    // Lo svolto lo si tocca solo se lui non l'aveva gia' corretto. Per
+    // l'ufficio non c'e' niente da rispettare: vince sempre il gestionale.
+    const orariNonToccati = ufficio || !v.prev || stessoOrario(v, v.prev);
+    const notaNonToccata = ufficio || !v.prev || (v.note||"") === (v.prev.note||"");
+    if(cambiaNome){ v.risorsaId = nomeUff; v.uff = 1; }
     v.data = n.d;
     v.servizioId = perPost[n.p] || v.servizioId;
     if(notaNonToccata) v.note = prev.note;

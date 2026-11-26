@@ -1,6 +1,6 @@
 // Fa funzionare Ore Squadra anche senza internet: prima prova la rete
 // (cosi' gli aggiornamenti arrivano), se non c'e' usa la copia salvata.
-const CACHE = "ore-squadra-v5";
+const CACHE = "ore-squadra-v6";
 const FILE = ["./", "./index.html", "./manifest.json", "./icon.svg", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
